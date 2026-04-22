@@ -255,6 +255,12 @@
       border: 1px solid rgba(255, 204, 0, 0.2);
     }
 
+    .tag-size {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text2);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
     /* ── MODE TOGGLE ── */
     .mode-toggle {
       display: flex;
@@ -1732,11 +1738,12 @@
             ? '<span class="preset-tag tag-dub">Dublado</span>'
             : (p.type ? `<span class="preset-tag tag-sub">${p.type}</span>` : '');
           const isoTag = p.iso ? `<span class="preset-tag tag-iso">${p.iso}</span>` : '';
+          const sizeTag = p.size ? `<span class="preset-tag tag-size">${p.size}</span>` : '';
           card.innerHTML = `
             <img class="preset-img" src="${p.image}" alt="${p.name}" onerror="this.src='https://via.placeholder.com/110x140/080c1a/00d4ff?text=Img'">
             <div class="preset-info">
               <div class="preset-name">${p.name}</div>
-              <div class="preset-tags">${typeTag}${isoTag}</div>
+              <div class="preset-tags">${typeTag}${isoTag}${sizeTag}</div>
             </div>
           `;
           gallery.appendChild(card);
