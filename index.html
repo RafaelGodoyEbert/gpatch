@@ -203,15 +203,56 @@
       border-bottom: 1px solid var(--border);
     }
 
-    .preset-name {
-      font-size: 10px;
-      text-align: center;
+    .preset-info {
       padding: 8px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex: 1;
+    }
+
+    .preset-name {
+      font-size: 11px;
+      text-align: center;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .preset-tags {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .preset-tag {
+      font-size: 8px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .tag-dub {
+      background: rgba(0, 255, 136, 0.1);
+      color: var(--green);
+      border: 1px solid rgba(0, 255, 136, 0.2);
+    }
+
+    .tag-sub {
+      background: rgba(0, 180, 255, 0.1);
+      color: var(--cyan);
+      border: 1px solid rgba(0, 180, 255, 0.2);
+    }
+
+    .tag-iso {
+      background: rgba(255, 204, 0, 0.1);
+      color: var(--yellow);
+      border: 1px solid rgba(255, 204, 0, 0.2);
     }
 
     /* ── MODE TOGGLE ── */
@@ -853,13 +894,11 @@
 
       <div class="presets-section">
         <div class="presets-title">Patches Prontos</div>
-        <div class="presets-gallery">
-          <div class="preset-card"
-            onclick="loadPreset('https://huggingface.co/datasets/RafaG/godoy/resolve/main/Black_Dublagem_v2.dubpatch?download=true', 'Black (Dublado)')">
-            <img class="preset-img" src="https://www.speedrun.com/static/game/k6qqe96g/cover.png" alt="Black">
-            <div class="preset-name">Black</div>
+        <div class="presets-gallery" id="presetsGallery">
+          <div class="preset-card shimmer" style="pointer-events:none;opacity:0.4">
+            <div style="width:100%;height:140px;background:var(--bg3)"></div>
+            <div class="preset-name">Carregando…</div>
           </div>
-          <!-- Você pode adicionar mais jogos aqui copiando o bloco .preset-card -->
         </div>
       </div>
 
@@ -965,6 +1004,33 @@
               <input type="text" id="infoAuthor" placeholder="Seu nick">
             </div>
           </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Tipo (ex: Dublado)</label>
+              <input type="text" id="infoType" placeholder="Dublado, Legendado..." list="typesList">
+              <datalist id="typesList">
+                <option value="Dublado">
+                <option value="Legendado">
+                <option value="Dublado + Legendado">
+                <option value="Tradução de Menu">
+              </datalist>
+            </div>
+            <div class="field">
+              <label>Região da ISO</label>
+              <input type="text" id="infoISO" placeholder="Ex: USA ou SLUS_212.15">
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Versão do Patch</label>
+              <input type="text" id="infoVersion" placeholder="Ex: 1.0">
+            </div>
+            <div class="field">
+              <label>Idioma</label>
+              <input type="text" id="infoLanguage" placeholder="Ex: Português (BR)" value="Português (BR)">
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -1532,12 +1598,19 @@
         const gameName = document.getElementById('infoGame').value.trim() || 'PS2 Game';
         const patchName = document.getElementById('infoPatch').value.trim() || 'Dublagem PT-BR';
         const author = document.getElementById('infoAuthor').value.trim() || '';
+        const patchType = document.getElementById('infoType').value.trim() || '';
+        const isoRegion = document.getElementById('infoISO').value.trim() || '';
+        const patchVersion = document.getElementById('infoVersion').value.trim() || '1.0';
+        const patchLanguage = document.getElementById('infoLanguage').value.trim() || '';
 
         const metadata = {
-          version: '1.0',
+          version: patchVersion,
           game: gameName,
           patchName,
           author,
+          type: patchType,
+          iso: isoRegion,
+          language: patchLanguage,
           originalHash: origHash,
           originalSize: origFile.size,
           changedFiles: changed.map(f => ({ path: f.path, size: f.size })),
@@ -1639,8 +1712,45 @@
     });
 
     // ═══════════════════════════════════════════════
+    //  LOAD PRESETS FROM JSON
+    // ═══════════════════════════════════════════════
+    async function loadPresetsFromJSON() {
+      const gallery = document.getElementById('presetsGallery');
+      try {
+        const res = await fetch('https://huggingface.co/datasets/RafaG/godoy/raw/main/presets.json');
+        const presets = await res.json();
+        gallery.innerHTML = '';
+        if (!presets.length) {
+          gallery.innerHTML = '<div style="font-size:10px;color:var(--text2);padding:12px">Nenhum patch disponível no momento.</div>';
+          return;
+        }
+        for (const p of presets) {
+          const card = document.createElement('div');
+          card.className = 'preset-card';
+          card.onclick = () => loadPreset(p.url, `${p.name} (${p.type || 'Patch'})`);
+          const typeTag = p.type === 'Dublado'
+            ? '<span class="preset-tag tag-dub">Dublado</span>'
+            : (p.type ? `<span class="preset-tag tag-sub">${p.type}</span>` : '');
+          const isoTag = p.iso ? `<span class="preset-tag tag-iso">${p.iso}</span>` : '';
+          card.innerHTML = `
+            <img class="preset-img" src="${p.image}" alt="${p.name}" onerror="this.src='https://via.placeholder.com/110x140/080c1a/00d4ff?text=Img'">
+            <div class="preset-info">
+              <div class="preset-name">${p.name}</div>
+              <div class="preset-tags">${typeTag}${isoTag}</div>
+            </div>
+          `;
+          gallery.appendChild(card);
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar presets.json:', e);
+        gallery.innerHTML = '<div style="font-size:10px;color:var(--red);padding:12px">Erro ao carregar presets</div>';
+      }
+    }
+
+    // ═══════════════════════════════════════════════
     //  INIT
     // ═══════════════════════════════════════════════
+    loadPresetsFromJSON();
     checkURLPatch();
   </script>
 </body>
