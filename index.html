@@ -955,7 +955,7 @@
       <div class="logo-sub">PS2 gPatcher</div>
       <div class="version-badge">
         <a href="https://www.youtube.com/@godoyy" target="_blank">📺 @godoyy</a>
-        <a href="https://github.com/RafaelGodoyEbert" target="_blank">💻 GitHub</a>
+        <a href="https://github.com/RafaelGodoyEbert/gpatch" target="_blank">💻 GitHub</a>
       </div>
     </header>
 
@@ -1027,7 +1027,8 @@
           <div class="pi-item"><span class="pi-label">Autor</span><span class="pi-value" id="piAuthor">-</span></div>
           <div class="pi-item"><span class="pi-label">Idioma</span><span class="pi-value" id="piLang">-</span></div>
           <div class="pi-item"><span class="pi-label">Tipo</span><span class="pi-value" id="piType">-</span></div>
-          <div class="pi-item"><span class="pi-label">ISO Recomendada</span><span class="pi-value" id="piIso">-</span></div>
+          <div class="pi-item"><span class="pi-label">ISO Recomendada</span><span class="pi-value" id="piIso">-</span>
+          </div>
         </div>
       </div>
 
@@ -1168,7 +1169,9 @@
 
     <footer>
       GPatch · Processamento 100% local · Nenhum dado enviado<br>
-      <a href="#" onclick="showEmbed(); return false;" style="color:var(--cyan); text-decoration:none; margin-top:12px; display:inline-block; padding: 4px;">&lt;/&gt; Código de Embed</a>
+      <a href="#" onclick="showEmbed(); return false;"
+        style="color:var(--cyan); text-decoration:none; margin-top:12px; display:inline-block; padding: 4px;">&lt;/&gt;
+        Código de Embed</a>
     </footer>
   </div>
 
@@ -1317,10 +1320,10 @@
           const buffer = e.target.result;
           state[key] = { buffer: buffer, name: file.name, size: file.size };
           updateDropZone(key, file);
-          
+
           const meta = await extractPatchMeta(buffer);
           showPatchInfo(meta);
-          
+
           checkButtons();
           resetResult('apply');
         };
@@ -1387,7 +1390,7 @@
         card.classList.remove('visible');
         return;
       }
-      
+
       const setVal = (id, val) => {
         const el = document.getElementById(id);
         el.textContent = val || 'Não informado';
@@ -1400,7 +1403,7 @@
       setVal('piLang', meta.language);
       setVal('piType', meta.type);
       setVal('piIso', meta.iso);
-      
+
       document.getElementById('piVersion').textContent = meta.version ? `v${meta.version}` : 'v1.0';
       card.classList.add('visible');
     }
@@ -1448,7 +1451,7 @@
         const banner = document.getElementById('preloadBanner');
         const pbName = document.getElementById('preloadName');
         const pbLabel = document.querySelector('.pb-label');
-        
+
         pbLabel.textContent = "Baixando Patch...";
         pbName.textContent = "Aguarde...";
         banner.classList.add('visible');
@@ -1456,10 +1459,10 @@
 
         const res = await fetch(patchURL);
         const buf = await res.arrayBuffer();
-        
+
         const meta = await extractPatchMeta(buf);
         if (!meta) throw new Error("Metadados inválidos");
-        
+
         preloadedPatchBuffer = buf;
         preloadedPatchMeta = meta;
         state.applyPatch = { buffer: buf, name: meta.patchName + '.gpatch', size: buf.byteLength };
@@ -1481,18 +1484,18 @@
       const banner = document.getElementById('preloadBanner');
       const pbName = document.getElementById('preloadName');
       const pbLabel = document.querySelector('.pb-label');
-      
+
       pbLabel.textContent = "Patch Selecionado (Aguardando Download)";
-      
+
       pbName.innerHTML = `
         <div style="display:flex; flex-wrap: wrap; gap: 8px; justify-content:space-between; align-items:center; width:100%; margin-top: 4px;">
           <span>${p.name}</span>
           <button onclick="loadPreset('${p.url}', '${p.name}')" style="background:var(--cyan); color:#000; border:none; padding:6px 12px; border-radius:6px; font-family:'Space Mono',monospace; font-size:11px; font-weight:bold; cursor:pointer; box-shadow:0 0 10px rgba(0, 212, 255, 0.4);">⬇️ Baixar Patch para Memória</button>
         </div>
       `;
-      
+
       banner.classList.add('visible');
-      
+
       showPatchInfo({
         game: p.name,
         patchName: p.type || 'Patch',
@@ -1502,7 +1505,7 @@
         iso: p.iso || '-',
         version: p.version || ''
       });
-      
+
       checkButtons();
     }
 
@@ -1516,7 +1519,7 @@
 
         const res = await fetch(url);
         const buf = await res.arrayBuffer();
-        
+
         const meta = await extractPatchMeta(buf);
         if (!meta) throw new Error("Metadados inválidos");
 
@@ -1550,11 +1553,11 @@
     function showEmbed() {
       let baseUrl = window.location.href.split('?')[0];
       const customUrl = prompt("Você quer usar uma lista de patches personalizada no embed?\nSe sim, cole a URL do seu próprio arquivo presets.json abaixo.\nSe quiser usar a lista padrão, deixe em branco e dê OK:");
-      
+
       if (customUrl && customUrl.trim() !== '') {
         baseUrl += '?presets=' + encodeURIComponent(customUrl.trim());
       }
-      
+
       const code = `<iframe src="${baseUrl}" width="100%" height="800" style="border:none; border-radius:12px; max-width:800px; margin:0 auto; display:block;"></iframe>`;
       prompt("Copie o código abaixo para incorporar o GPatch no seu site:", code);
     }
