@@ -994,11 +994,12 @@
         <div class="step-title">Método de Comparação</div>
         <div class="step-desc">Escolha como o patch será gerado.</div>
         <div class="mode-toggle" style="margin:0">
-          <button class="mode-btn active" id="btnModeBin" onclick="setCreateMode('binary')">⚡ Modo Binário</button>
-          <button class="mode-btn" id="btnModeFile" onclick="setCreateMode('file')">📁 Modo Arquivo</button>
+          <button class="mode-btn active" id="btnModeAuto" onclick="setCreateMode('auto')">🤖 Automático</button>
+          <button class="mode-btn" id="btnModeBin" onclick="setCreateMode('binary')">⚡ Binário</button>
+          <button class="mode-btn" id="btnModeFile" onclick="setCreateMode('file')">📁 Arquivo</button>
         </div>
         <div id="createModeDesc" style="font-size:10px;color:var(--text2);margin-top:8px;line-height:1.6">
-          <strong>Modo binário:</strong> melhor para caso os arquivos internos sejas grandes 2gb+.
+          <strong>Modo automático:</strong> escolhe o melhor método (Binário para arquivos grandes, Arquivo para soltos).
         </div>
       </div>
 
@@ -1054,7 +1055,7 @@
       </div>
 
       <button class="action-btn create-btn" id="btnRunCreate" onclick="runCreate()" disabled>
-        ⚡ Gerar .gpatch
+        ⚡ Gerar .gpatch (Auto)
       </button>
 
       <div class="progress-card" id="createProgress">
@@ -1084,7 +1085,7 @@
       createOrig: null, // { file, name, size }
       createMod: null,  // { file, name, size }
     };
-    let createMode = 'binary';
+    let createMode = 'auto';
 
     // ═══════════════════════════════════════════════
     //  ISO 9660 READER (ASYNC)
@@ -1270,11 +1271,15 @@
 
     function setCreateMode(m) {
       createMode = m;
+      document.getElementById('btnModeAuto').classList.toggle('active', m === 'auto');
       document.getElementById('btnModeFile').classList.toggle('active', m === 'file');
       document.getElementById('btnModeBin').classList.toggle('active', m === 'binary');
       const desc = document.getElementById('createModeDesc');
       const btn = document.getElementById('btnRunCreate');
-      if (m === 'file') {
+      if (m === 'auto') {
+        desc.innerHTML = '<strong>Modo automático:</strong> escolhe o melhor método (Binário para arquivos grandes, Arquivo para soltos).';
+        btn.innerHTML = '⚡ Gerar .gpatch (Auto)';
+      } else if (m === 'file') {
         desc.innerHTML = '<strong>Modo arquivo:</strong> melhor para caso os arquivos internos forem soltos.';
         btn.innerHTML = '⚡ Gerar .gpatch (Arquivo)';
       } else {
@@ -1738,7 +1743,32 @@
       const resultEl = document.getElementById('createResult');
 
       try {
-        const mode = createMode;
+        let mode = createMode;
+
+        if (mode === 'auto') {
+          await log('Modo automático: Analisando formato do arquivo...', 2);
+          try {
+            const tempIso = new ISO9660Reader(origFile);
+            await tempIso.parse();
+            let hasLargeFiles = false;
+            for (const path in tempIso.files) {
+              if (tempIso.files[path].size > 1.5 * 1024 * 1024 * 1024) { // 1.5GB
+                hasLargeFiles = true;
+                break;
+              }
+            }
+            if (hasLargeFiles) {
+              mode = 'binary';
+              await log('Modo Auto: Arquivo grande detectado. Usando Modo Binário.', 3);
+            } else {
+              mode = 'file';
+              await log('Modo Auto: Arquivos menores detectados. Usando Modo Arquivo.', 3);
+            }
+          } catch (e) {
+            mode = 'binary';
+            await log('Modo Auto: Formato não-ISO. Usando Modo Binário.', 3);
+          }
+        }
 
         await log('Calculando hash da ISO original...', 3);
         const origHash = await sha256(origFile);
