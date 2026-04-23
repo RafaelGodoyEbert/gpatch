@@ -990,6 +990,19 @@
       </div>
 
       <div class="step-card">
+        <div class="step-label"><span class="step-num">⚙</span> Modo de Criação</div>
+        <div class="step-title">Método de Comparação</div>
+        <div class="step-desc">Escolha como o patch será gerado.</div>
+        <div class="mode-toggle" style="margin:0">
+          <button class="mode-btn active" id="btnModeBin" onclick="setCreateMode('binary')">⚡ Modo Binário</button>
+          <button class="mode-btn" id="btnModeFile" onclick="setCreateMode('file')">📁 Modo Arquivo</button>
+        </div>
+        <div id="createModeDesc" style="font-size:10px;color:var(--text2);margin-top:8px;line-height:1.6">
+          <strong>Modo binário:</strong> melhor para caso os arquivos internos sejas grandes 2gb+.
+        </div>
+      </div>
+
+      <div class="step-card">
         <div class="step-label"><span class="step-num">3</span> Informações do Patch</div>
         <div class="step-title">Metadados (Opcional)</div>
         <div class="step-desc">Identifique seu patch para os usuários.</div>
@@ -1071,6 +1084,7 @@
       createOrig: null, // { file, name, size }
       createMod: null,  // { file, name, size }
     };
+    let createMode = 'binary';
 
     // ═══════════════════════════════════════════════
     //  ISO 9660 READER (ASYNC)
@@ -1175,6 +1189,22 @@
       log.innerHTML = `<span class="log-entry ${type ? 'log-' + type : ''}">${msg}</span>`;
     }
 
+    async function readBlobAsUint8Array(blob) {
+      try {
+        return new Uint8Array(await blob.arrayBuffer());
+      } catch (e) {
+        console.warn("arrayBuffer() via FileReader falhou, lendo em chunks...", e);
+        const size = blob.size;
+        const buffer = new Uint8Array(size);
+        const CHUNK = 10 * 1024 * 1024; // 10MB
+        for (let offset = 0; offset < size; offset += CHUNK) {
+          const slice = blob.slice(offset, offset + CHUNK);
+          buffer.set(new Uint8Array(await slice.arrayBuffer()), offset);
+        }
+        return buffer;
+      }
+    }
+
     // ═══════════════════════════════════════════════
     //  FILE LOADING
     // ═══════════════════════════════════════════════
@@ -1236,6 +1266,21 @@
       document.getElementById('panelCreate').classList.toggle('active', m === 'create');
       document.getElementById('btnApply').classList.toggle('active', m === 'apply');
       document.getElementById('btnCreate').classList.toggle('active', m === 'create');
+    }
+
+    function setCreateMode(m) {
+      createMode = m;
+      document.getElementById('btnModeFile').classList.toggle('active', m === 'file');
+      document.getElementById('btnModeBin').classList.toggle('active', m === 'binary');
+      const desc = document.getElementById('createModeDesc');
+      const btn = document.getElementById('btnRunCreate');
+      if (m === 'file') {
+        desc.innerHTML = '<strong>Modo arquivo:</strong> melhor para caso os arquivos internos forem soltos.';
+        btn.innerHTML = '⚡ Gerar .gpatch (Arquivo)';
+      } else {
+        desc.innerHTML = '<strong>Modo binário:</strong> melhor para caso os arquivos internos sejas grandes 2gb+.';
+        btn.innerHTML = '⚡ Gerar .gpatch (Binário)';
+      }
     }
 
     // ═══════════════════════════════════════════════
@@ -1327,7 +1372,177 @@
       const resultEl = document.getElementById('applyResult');
 
       try {
-        await log('Lendo patch...', 5);
+        const magic = new Uint8Array(patchBuf, 0, 4);
+        const isGPBin = (magic[0] === 0x47 && magic[1] === 0x50 && magic[2] === 0x03);
+
+        if (isGPBin) {
+          const compressionFlag = magic[3]; // 0x00 = raw, 0x01 = deflate
+          await log(`Patch GPatch ${compressionFlag ? '(Comprimido)' : '(Sparse Delta)'} detectado...`, 5);
+          const view = new DataView(patchBuf);
+          const metaLen = view.getUint32(4, true);
+          const metaJson = new TextDecoder().decode(new Uint8Array(patchBuf, 8, metaLen));
+          const meta = JSON.parse(metaJson);
+
+          await log('Verificando integridade da ISO...', 8);
+          try {
+            const hash = await sha256(origFile);
+            if (meta.originalHash && hash !== meta.originalHash) {
+              await log('Aviso: hash diferente, continuando...', 10, 'warn');
+            }
+          } catch (e) {
+            await log('Aviso: hash não pôde ser verificado...', 10, 'warn');
+          }
+
+          let dataU8, dataDv;
+          let dataOffset = 0;
+
+          if (compressionFlag === 0x01) {
+            const rawSize = view.getUint32(8 + metaLen, true);
+            const compressedPayload = new Uint8Array(patchBuf, 8 + metaLen + 4);
+
+            await log(`Descomprimindo ${fmtSize(compressedPayload.length)} → ${fmtSize(rawSize)}...`, 12);
+
+            const ds = new DecompressionStream('deflate');
+            const writer = ds.writable.getWriter();
+            const reader = ds.readable.getReader();
+            const decompChunks = [];
+
+            const DECOMP_CHUNK = 4 * 1024 * 1024;
+            const writeP = (async () => {
+              for (let i = 0; i < compressedPayload.length; i += DECOMP_CHUNK) {
+                const chunk = compressedPayload.subarray(i, Math.min(i + DECOMP_CHUNK, compressedPayload.length));
+                await writer.write(chunk);
+                setProgress('applyFill', 'applyPct', 'applyLog',
+                  12 + (i / compressedPayload.length) * 15,
+                  `Descomprimindo: ${fmtSize(i)}/${fmtSize(compressedPayload.length)}...`);
+              }
+              await writer.close();
+            })();
+
+            const readP = (async () => {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                decompChunks.push(value);
+              }
+            })();
+
+            await Promise.all([writeP, readP]);
+
+            let totalLen = 0;
+            for (const c of decompChunks) totalLen += c.length;
+            dataU8 = new Uint8Array(totalLen);
+            let dOff = 0;
+            for (const c of decompChunks) {
+              dataU8.set(c, dOff);
+              dOff += c.length;
+            }
+            dataDv = new DataView(dataU8.buffer);
+            dataOffset = 0;
+
+            await log('Descompressão concluída!', 28);
+          } else {
+            dataU8 = new Uint8Array(patchBuf, 8 + metaLen);
+            dataDv = new DataView(dataU8.buffer, dataU8.byteOffset, dataU8.byteLength);
+            dataOffset = 0;
+          }
+
+          const numSectors = dataDv.getUint32(dataOffset, true);
+          dataOffset += 4;
+          const SECTOR = 2048;
+
+          await log(`${numSectors} setores com deltas para aplicar...`, 30);
+
+          const sectorPatches = new Map();
+          for (let i = 0; i < numSectors; i++) {
+            const sectorIdx = dataDv.getUint32(dataOffset, true);
+            dataOffset += 4;
+            const numRuns = dataDv.getUint16(dataOffset, true);
+            dataOffset += 2;
+            const runs = [];
+            for (let r = 0; r < numRuns; r++) {
+              const rOff = dataDv.getUint16(dataOffset, true); dataOffset += 2;
+              const rLen = dataDv.getUint16(dataOffset, true); dataOffset += 2;
+              runs.push({ o: rOff, d: dataU8.subarray(dataOffset, dataOffset + rLen) });
+              dataOffset += rLen;
+            }
+            sectorPatches.set(sectorIdx, runs);
+            if (i % 5000 === 0 && i > 0) {
+              setProgress('applyFill', 'applyPct', 'applyLog', 30 + (i / numSectors) * 15, `Lendo patch: ${i}/${numSectors}...`);
+              await sleep(0);
+            }
+          }
+
+          await log('Montando ISO final...', 48);
+          const origSectors = Math.ceil(origFile.size / SECTOR);
+          let maxSector = origSectors;
+          for (const idx of sectorPatches.keys()) {
+            if (idx + 1 > maxSector) maxSector = idx + 1;
+          }
+          const blobParts = [];
+          let sliceStart = null;
+
+          for (let lba = 0; lba < maxSector; lba++) {
+            if (sectorPatches.has(lba)) {
+              if (sliceStart !== null) {
+                blobParts.push(origFile.slice(sliceStart * SECTOR, lba * SECTOR));
+                sliceStart = null;
+              }
+              const patched = new Uint8Array(SECTOR);
+              if (lba * SECTOR < origFile.size) {
+                const orig = new Uint8Array(await origFile.slice(lba * SECTOR, Math.min((lba + 1) * SECTOR, origFile.size)).arrayBuffer());
+                patched.set(orig);
+              }
+              for (const run of sectorPatches.get(lba)) {
+                patched.set(run.d, run.o);
+              }
+              blobParts.push(patched);
+            } else {
+              if (sliceStart === null) sliceStart = lba;
+            }
+            if (lba % 50000 === 0 && lba > 0) {
+              setProgress('applyFill', 'applyPct', 'applyLog', 48 + (lba / maxSector) * 42, `Montando setor ${lba}/${maxSector}...`);
+              await sleep(0);
+            }
+          }
+          if (sliceStart !== null) {
+            blobParts.push(origFile.slice(sliceStart * SECTOR, origFile.size));
+          }
+
+          await log('Criando download...', 95);
+          await sleep(60);
+
+          const blob = new Blob(blobParts, { type: 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
+          const dlName = `${origName}_patched.iso`;
+
+          await log('Concluído!', 100);
+
+          resultEl.className = 'result-card success visible';
+          resultEl.innerHTML = `
+            <div class="result-icon">🎉</div>
+            <div class="result-title">Patch Aplicado!</div>
+            <div class="result-stats">
+              <div class="stat-badge"><span class="stat-val">${numSectors}</span><span class="stat-label">Setores</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(blob.size)}</span><span class="stat-label">ISO Final</span></div>
+            </div>
+            <div class="result-info">
+              ${meta.game ? `<strong>${meta.game}</strong> — ` : ''}
+              ${meta.patchName || 'Patch'}<br>
+              ${meta.author ? `Por: ${meta.author}<br>` : ''}
+              ISO pronta para uso.
+            </div>
+            <a class="dl-btn dl-btn-iso" href="${url}" download="${dlName}">
+              ⬇️ Baixar ${dlName}
+            </a>
+            <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
+          `;
+          return;
+        }
+
+        // JSZip Fallback (GPatch v1/v2)
+        await log('Lendo patch legado...', 5);
         const zip = await JSZip.loadAsync(patchBuf);
         const meta = JSON.parse(await zip.file('metadata.json').async('string'));
 
@@ -1523,93 +1738,234 @@
       const resultEl = document.getElementById('createResult');
 
       try {
-        if (origFile.size !== modFile.size) {
-          await log('ISOs com tamanho diferente — comparando por arquivo...', 5, 'warn');
-        }
+        const mode = createMode;
 
-        await log('Calculando hash da ISO original...', 5);
+        await log('Calculando hash da ISO original...', 3);
         const origHash = await sha256(origFile);
 
-        await log('Lendo estrutura da ISO original...', 12);
-        const origISO = new ISO9660Reader(origFile);
-        await origISO.parse();
-
-        await log('Lendo estrutura da ISO modificada...', 18);
-        const modISO = new ISO9660Reader(modFile);
-        await modISO.parse();
-
-        const origFiles = origISO.files;
-        const modFiles = modISO.files;
-        const allPaths = Object.keys(modFiles);
-
-        await log(`Comparando ${allPaths.length} arquivo(s)...`, 22);
-        const changed = [];
-
-        // Chunk size limit to read in memory
-        const MAX_CHUNK = 10 * 1024 * 1024;
-
-        for (let i = 0; i < allPaths.length; i++) {
-          const path = allPaths[i];
-          const pct = 22 + (i / allPaths.length) * 45;
-          const modInfo = modFiles[path];
-          const origInfo = origFiles[path];
-
-          if (!origInfo) {
-            await log(`Novo arquivo: ${path}`, pct);
-            changed.push({ path, ...modInfo });
-            continue;
-          }
-
-          if (origInfo.size !== modInfo.size) {
-            await log(`Modificado (${fmtSize(origInfo.size)}→${fmtSize(modInfo.size)}): ${path}`, pct);
-            changed.push({ path, ...modInfo });
-            continue;
-          }
-
-          // Read chunks to avoid memory issues for large files inside ISO
-          let identical = true;
-          for (let offset = 0; offset < origInfo.size; offset += MAX_CHUNK) {
-            const len = Math.min(MAX_CHUNK, origInfo.size - offset);
-            const [oChunk, mChunk] = await Promise.all([
-              origFile.slice(origInfo.lba * 2048 + offset, origInfo.lba * 2048 + offset + len).arrayBuffer(),
-              modFile.slice(modInfo.lba * 2048 + offset, modInfo.lba * 2048 + offset + len).arrayBuffer()
-            ]);
-            const o8 = new Uint8Array(oChunk);
-            const m8 = new Uint8Array(mChunk);
-            for (let b = 0; b < len; b++) {
-              if (o8[b] !== m8[b]) {
-                identical = false;
-                break;
-              }
-            }
-            if (!identical) break;
-          }
-
-          if (!identical) {
-            await log(`Conteúdo diferente: ${path}`, pct);
-            changed.push({ path, ...modInfo });
-          } else if (i % 20 === 0) {
-            await log(`Verificando: ${path}`, pct);
-          }
-        }
-
-        if (changed.length === 0) {
-          throw new Error('Nenhuma diferença encontrada! As ISOs parecem ser idênticas.');
-        }
-
-        await log(`${changed.length} arquivo(s) modificado(s) detectado(s)!`, 68);
-
-        // Build zip
-        const zip = new JSZip();
         const gameName = document.getElementById('infoGame').value.trim() || 'PS2 Game';
         const patchName = document.getElementById('infoPatch').value.trim() || 'Dublagem PT-BR';
         const author = document.getElementById('infoAuthor').value.trim() || '';
-        const patchType = document.getElementById('infoType').value.trim() || '';
-        const isoRegion = document.getElementById('infoISO').value.trim() || '';
+        const patchType = document.getElementById('infoType').value.trim() || 'Dublado';
+        const isoRegion = document.getElementById('infoISO').value.trim() || 'USA';
         const patchVersion = document.getElementById('infoVersion').value.trim() || '1.0';
         const patchLanguage = document.getElementById('infoLanguage').value.trim() || '';
 
-        const metadata = {
+        if (mode === 'file') {
+          await log('Analisando estrutura da ISO original...', 5);
+          const origIso = new ISO9660Reader(origFile);
+          await origIso.parse();
+
+          await log('Analisando estrutura da ISO modificada...', 10);
+          const modIso = new ISO9660Reader(modFile);
+          await modIso.parse();
+
+          const changedFiles = [];
+          const zip = new JSZip();
+          const filesFolder = zip.folder("files");
+
+          const paths = Object.keys(modIso.files);
+
+          for (let i = 0; i < paths.length; i++) {
+            const path = paths[i];
+            const mFile = modIso.files[path];
+            const oFile = origIso.files[path];
+
+            const pct = 15 + (i / paths.length) * 45;
+            if (i % 10 === 0) {
+              setProgress('createFill', 'createPct', 'createLog', pct, `Comparando: ${path}...`);
+              await sleep(0);
+            }
+
+            if (!oFile || oFile.size !== mFile.size) {
+              const mData = await modIso.readSector(mFile.lba, Math.ceil(mFile.size / 2048));
+              filesFolder.file(path, mData.subarray(0, mFile.size));
+              changedFiles.push({ path: path, size: mFile.size });
+              continue;
+            }
+
+            const numSec = Math.ceil(mFile.size / 2048);
+            let isDiff = false;
+            for (let s = 0; s < numSec; s += 32) {
+              const chunkCount = Math.min(32, numSec - s);
+              const oData = await origIso.readSector(oFile.lba + s, chunkCount);
+              const mData = await modIso.readSector(mFile.lba + s, chunkCount);
+              for (let b = 0; b < oData.length; b++) {
+                if (oData[b] !== mData[b]) {
+                  isDiff = true; break;
+                }
+              }
+              if (isDiff) break;
+            }
+
+            if (isDiff) {
+              const mData = await modIso.readSector(mFile.lba, numSec);
+              filesFolder.file(path, mData.subarray(0, mFile.size));
+              changedFiles.push({ path: path, size: mFile.size });
+            }
+          }
+
+          if (changedFiles.length === 0) {
+            throw new Error('Nenhuma diferença encontrada! As ISOs são idênticas.');
+          }
+
+          const metaObj = {
+            version: patchVersion,
+            game: gameName,
+            patchName,
+            author,
+            type: patchType,
+            iso: isoRegion,
+            language: patchLanguage,
+            originalHash: origHash,
+            originalSize: origFile.size,
+            modifiedSize: modFile.size,
+            changedFiles: changedFiles,
+            createdAt: new Date().toISOString()
+          };
+
+          zip.file("metadata.json", JSON.stringify(metaObj, null, 2));
+
+          await log('Gerando arquivo .gpatch (Comprimindo zip, pode demorar)...', 70);
+
+          const finalBlob = await zip.generateAsync({
+            type: "blob",
+            compression: "DEFLATE",
+            compressionOptions: { level: 6 }
+          }, (metadata) => {
+          setProgress('createFill', 'createPct', 'createLog', 70 + metadata.percent * 0.3, `Comprimindo Zip: ${metadata.percent.toFixed(1)}%...`);
+          });
+
+          const patchSize = finalBlob.size;
+          const url = URL.createObjectURL(finalBlob);
+          const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.gpatch`;
+
+          await log('Patch Arquivo gerado!', 100);
+
+          resultEl.className = 'result-card success visible';
+          resultEl.innerHTML = `
+            <div class="result-icon">📦</div>
+            <div class="result-title">Patch Modo Arquivo Criado!</div>
+            <div class="result-stats">
+              <div class="stat-badge"><span class="stat-val">${changedFiles.length}</span><span class="stat-label">Arquivos</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(patchSize)}</span><span class="stat-label">Tamanho</span></div>
+            </div>
+            <div class="result-info">
+              <strong>${gameName}</strong> — ${patchName}<br>
+              ${author ? `Criado por: ${author}<br>` : ''}
+              Formato: Arquivos Soltos (JSZip)
+            </div>
+            <a class="dl-btn dl-btn-patch" href="${url}" download="${dlName}">
+              ⬇️ Baixar ${dlName}
+            </a>
+            <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
+          `;
+          btn.disabled = false;
+          return;
+        }
+
+        // Lógica do Modo Binário (v3)
+        const SECTOR = 2048;
+        const maxSize = Math.max(origFile.size, modFile.size);
+        const minSize = Math.min(origFile.size, modFile.size);
+        const totalSectors = Math.ceil(maxSize / SECTOR);
+        const commonSectors = Math.floor(minSize / SECTOR);
+
+        if (origFile.size !== modFile.size) {
+          await log(`ISOs com tamanhos diferentes (${fmtSize(origFile.size)} vs ${fmtSize(modFile.size)}), comparando...`, 5, 'warn');
+        }
+
+        // Compara setor a setor E extrai runs de bytes diferentes
+        const sectorEntries = []; // [{idx, runs: [{o, l, d}]}]
+        let totalRunBytes = 0;
+        const BATCH = 512; // 1MB por lote
+        const MERGE_GAP = 16;
+
+        for (let start = 0; start < commonSectors; start += BATCH) {
+          const end = Math.min(start + BATCH, commonSectors);
+          const byteStart = start * SECTOR;
+          const byteEnd = end * SECTOR;
+
+          const [origChunk, modChunk] = await Promise.all([
+            origFile.slice(byteStart, Math.min(byteEnd, origFile.size)).arrayBuffer(),
+            modFile.slice(byteStart, Math.min(byteEnd, modFile.size)).arrayBuffer()
+          ]);
+
+          const origU8 = new Uint8Array(origChunk);
+          const modU8 = new Uint8Array(modChunk);
+
+          for (let s = 0; s < end - start; s++) {
+            const off = s * SECTOR;
+            let differs = false;
+            const origDV = new DataView(origChunk, off, SECTOR);
+            const modDV = new DataView(modChunk, off, SECTOR);
+            for (let b = 0; b < SECTOR; b += 4) {
+              if (origDV.getUint32(b) !== modDV.getUint32(b)) { differs = true; break; }
+            }
+            if (!differs) continue;
+
+            const runs = [];
+            let i = 0;
+            while (i < SECTOR) {
+              while (i < SECTOR && origU8[off + i] === modU8[off + i]) i++;
+              if (i >= SECTOR) break;
+
+              const runStart = i;
+              while (i < SECTOR && origU8[off + i] !== modU8[off + i]) i++;
+
+              while (i < SECTOR) {
+                let gap = 0;
+                while (i + gap < SECTOR && origU8[off + i + gap] === modU8[off + i + gap]) gap++;
+                if (gap > MERGE_GAP || i + gap >= SECTOR) break;
+                i += gap;
+                while (i < SECTOR && origU8[off + i] !== modU8[off + i]) i++;
+              }
+
+              const runLen = i - runStart;
+              if (runLen > SECTOR - 32) {
+                runs.length = 0;
+                runs.push({ o: 0, l: SECTOR, d: modU8.slice(off, off + SECTOR) });
+                totalRunBytes += SECTOR;
+                break;
+              }
+              runs.push({ o: runStart, l: runLen, d: modU8.slice(off + runStart, off + runStart + runLen) });
+              totalRunBytes += runLen;
+            }
+            if (runs.length > 0) {
+              sectorEntries.push({ idx: start + s, runs });
+            }
+          }
+
+          const pct = 5 + (end / totalSectors) * 50;
+          setProgress('createFill', 'createPct', 'createLog', pct,
+            `Comparando: ${end}/${totalSectors} (${sectorEntries.length} setores, ${fmtSize(totalRunBytes)} delta)`);
+          await sleep(0);
+        }
+
+        if (modFile.size > origFile.size) {
+          for (let start = commonSectors; start < totalSectors; start += BATCH) {
+            const end = Math.min(start + BATCH, totalSectors);
+            const byteStart = start * SECTOR;
+            const byteEnd = Math.min(end * SECTOR, modFile.size);
+            const chunk = await modFile.slice(byteStart, byteEnd).arrayBuffer();
+            const modU8 = new Uint8Array(chunk);
+            for (let s = 0; s < end - start; s++) {
+              const off = s * SECTOR;
+              const len = Math.min(SECTOR, modU8.length - off);
+              sectorEntries.push({
+                idx: start + s,
+                runs: [{ o: 0, l: len, d: modU8.slice(off, off + len) }]
+              });
+              totalRunBytes += len;
+            }
+          }
+        }
+
+        if (sectorEntries.length === 0) {
+          throw new Error('Nenhuma diferença encontrada! As ISOs são idênticas.');
+        }
+
+        const metaObj = {
           version: patchVersion,
           game: gameName,
           patchName,
@@ -1619,54 +1975,136 @@
           language: patchLanguage,
           originalHash: origHash,
           originalSize: origFile.size,
-          changedFiles: changed.map(f => ({ path: f.path, size: f.size })),
+          modifiedSize: modFile.size,
+          changedSectors: sectorEntries.length,
+          totalDeltaBytes: totalRunBytes,
+          compressed: true,
           createdAt: new Date().toISOString()
         };
-        zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+        const metaBytes = new TextEncoder().encode(JSON.stringify(metaObj));
 
-        for (let i = 0; i < changed.length; i++) {
-          const f = changed[i];
-          const pct = 70 + (i / changed.length) * 20;
-          await log(`Empacotando: ${f.path}`, pct);
-          const data = modFile.slice(f.lba * 2048, f.lba * 2048 + f.size);
-          // JSZip suporta Blob/File nativamente, então não usamos ArrayBuffer
-          zip.file(`files/${f.path}`, data);
+        await log(`${sectorEntries.length} setores, ${fmtSize(totalRunBytes)} de deltas — serializando...`, 56);
+
+        let rawSize = 4;
+        for (const entry of sectorEntries) {
+          rawSize += 6;
+          for (const r of entry.runs) rawSize += 4 + r.l;
         }
 
-        await log('Comprimindo (isso pode demorar e travar um pouco o navegador)...', 91);
-        const patchBuf = await zip.generateAsync({
-          type: 'arraybuffer', compression: 'DEFLATE',
-          compressionOptions: { level: 6 }
-        });
+        await log(`Serializando ${fmtSize(rawSize)} de dados brutos...`, 58);
+
+        const rawBuf = new Uint8Array(rawSize);
+        const rawDv = new DataView(rawBuf.buffer);
+        let wp = 0;
+        rawDv.setUint32(wp, sectorEntries.length, true); wp += 4;
+
+        for (let j = 0; j < sectorEntries.length; j++) {
+          const entry = sectorEntries[j];
+          rawDv.setUint32(wp, entry.idx, true); wp += 4;
+          rawDv.setUint16(wp, entry.runs.length, true); wp += 2;
+          for (const r of entry.runs) {
+            rawDv.setUint16(wp, r.o, true); wp += 2;
+            rawDv.setUint16(wp, r.l, true); wp += 2;
+            rawBuf.set(r.d, wp); wp += r.l;
+          }
+          if (j % 50000 === 0 && j > 0) {
+            setProgress('createFill', 'createPct', 'createLog', 58 + (j / sectorEntries.length) * 10,
+              `Serializando: ${j}/${sectorEntries.length}...`);
+            await sleep(0);
+          }
+        }
+
+        sectorEntries.length = 0;
+
+        await log('Comprimindo com DEFLATE (pode demorar)...', 70);
+
+        let compressedBuf;
+        try {
+          const cs = new CompressionStream('deflate');
+          const writer = cs.writable.getWriter();
+          const reader = cs.readable.getReader();
+          const compressedChunks = [];
+
+          const COMP_CHUNK = 4 * 1024 * 1024;
+          const writePromise = (async () => {
+            for (let i = 0; i < rawBuf.length; i += COMP_CHUNK) {
+              const chunk = rawBuf.subarray(i, Math.min(i + COMP_CHUNK, rawBuf.length));
+              await writer.write(chunk);
+              setProgress('createFill', 'createPct', 'createLog',
+                70 + (i / rawBuf.length) * 20,
+                `Comprimindo: ${fmtSize(i)}/${fmtSize(rawBuf.length)}...`);
+            }
+            await writer.close();
+          })();
+
+          const readPromise = (async () => {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              compressedChunks.push(value);
+            }
+          })();
+
+          await Promise.all([writePromise, readPromise]);
+
+          let totalCompLen = 0;
+          for (const c of compressedChunks) totalCompLen += c.length;
+          compressedBuf = new Uint8Array(totalCompLen);
+          let cOff = 0;
+          for (const c of compressedChunks) {
+            compressedBuf.set(c, cOff);
+            cOff += c.length;
+          }
+        } catch (compErr) {
+          console.warn('CompressionStream não disponível, salvando sem comprimir:', compErr);
+          compressedBuf = rawBuf;
+          metaObj.compressed = false;
+        }
+
+        const compressionRatio = ((1 - compressedBuf.length / rawBuf.length) * 100).toFixed(1);
+        await log(`Comprimido: ${fmtSize(rawBuf.length)} → ${fmtSize(compressedBuf.length)} (${compressionRatio}% redução)`, 92);
+
+        const hdrSize = 8 + metaBytes.length + 4;
+        const hdrBuf = new ArrayBuffer(hdrSize);
+        const hdrU8 = new Uint8Array(hdrBuf);
+        const hdrDv = new DataView(hdrBuf);
+        hdrU8[0] = 0x47; // G
+        hdrU8[1] = 0x50; // P
+        hdrU8[2] = 0x03; // version 3
+        hdrU8[3] = metaObj.compressed ? 0x01 : 0x00;
+        hdrDv.setUint32(4, metaBytes.length, true);
+        hdrU8.set(metaBytes, 8);
+        hdrDv.setUint32(8 + metaBytes.length, rawBuf.length, true);
+
+        const finalBlob = new Blob([hdrBuf, compressedBuf], { type: 'application/octet-stream' });
+        const patchSize = finalBlob.size;
+        const url = URL.createObjectURL(finalBlob);
+        const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.gpatch`;
 
         await log('Patch gerado!', 100);
 
-        const blob = new Blob([patchBuf], { type: 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}.gpatch`;
-
-        let totalModSize = 0;
-        changed.forEach(f => totalModSize += f.size);
-
         resultEl.className = 'result-card success visible';
         resultEl.innerHTML = `
-      <div class="result-icon">🎙️</div>
-      <div class="result-title">Patch Criado!</div>
-      <div class="result-stats">
-        <div class="stat-badge"><span class="stat-val">${changed.length}</span><span class="stat-label">Arquivos</span></div>
-        <div class="stat-badge"><span class="stat-val">${fmtSize(patchBuf.byteLength)}</span><span class="stat-label">Patch</span></div>
-        <div class="stat-badge"><span class="stat-val">${Math.round((1 - (patchBuf.byteLength / totalModSize)) * 100)}%</span><span class="stat-label">Compressão</span></div>
-      </div>
-      <div class="result-info">
-        <strong>${gameName}</strong> — ${patchName}<br>
-        ${author ? `Criado por: ${author}<br>` : ''}
-        Distribua o <strong>.gpatch</strong>.
-      </div>
-      <a class="dl-btn dl-btn-patch" href="${url}" download="${dlName}">
-        ⬇️ Baixar ${dlName}
-      </a>
-      <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
-    `;
+          <div class="result-icon">⚡</div>
+          <div class="result-title">Patch (Sparse Delta) Criado!</div>
+          <div class="result-stats">
+            <div class="stat-badge"><span class="stat-val">${metaObj.changedSectors}</span><span class="stat-label">Setores</span></div>
+            <div class="stat-badge"><span class="stat-val">${fmtSize(totalRunBytes)}</span><span class="stat-label">Delta Bruto</span></div>
+            <div class="stat-badge"><span class="stat-val">${fmtSize(patchSize)}</span><span class="stat-label">Patch Final</span></div>
+            <div class="stat-badge"><span class="stat-val">${Math.round((1 - (patchSize / maxSize)) * 100)}%</span><span class="stat-label">Redução</span></div>
+          </div>
+          <div class="result-info">
+            <strong>${gameName}</strong> — ${patchName}<br>
+            ${author ? `Criado por: ${author}<br>` : ''}
+            Formato GPatch · Compressão DEFLATE
+          </div>
+          <a class="dl-btn dl-btn-patch" href="${url}" download="${dlName}">
+            ⬇️ Baixar ${dlName}
+          </a>
+          <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
+        `;
+        btn.disabled = false;
+        return;
 
       } catch (err) {
         await log(err.message, 100, 'err');
