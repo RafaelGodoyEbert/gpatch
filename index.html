@@ -817,6 +817,84 @@
       flex-shrink: 0;
     }
 
+    /* ── PATCH INFO CARD ── */
+    .patch-info-card {
+      background: rgba(0, 180, 255, 0.04);
+      border: 1px solid rgba(0, 180, 255, 0.15);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      display: none;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .patch-info-card.visible {
+      display: block;
+    }
+
+    .pi-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(0, 180, 255, 0.1);
+      padding-bottom: 10px;
+    }
+
+    .pi-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cyan);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pi-tag {
+      background: rgba(0, 180, 255, 0.1);
+      color: var(--cyan);
+      font-size: 9px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    .pi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .pi-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .pi-label {
+      font-size: 8px;
+      text-transform: uppercase;
+      color: var(--text2);
+      letter-spacing: 1px;
+    }
+
+    .pi-value {
+      font-size: 11px;
+      color: #fff;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pi-value.empty {
+      color: var(--text2);
+      font-weight: 400;
+    }
+
     /* ── FOOTER ── */
     footer {
       text-align: center;
@@ -874,7 +952,7 @@
   <div class="container">
     <header>
       <div class="logo">GPatch</div>
-      <div class="logo-sub">PS2 Dubbing Patcher</div>
+      <div class="logo-sub">PS2 gPatcher</div>
       <div class="version-badge">
         <a href="https://www.youtube.com/@godoyy" target="_blank">📺 @godoyy</a>
         <a href="https://github.com/RafaelGodoyEbert" target="_blank">💻 GitHub</a>
@@ -935,6 +1013,21 @@
           <div class="dz-icon">📦</div>
           <div class="dz-text"><strong>Toque para selecionar</strong><br>ou arraste o arquivo aqui</div>
           <div class="dz-tag">.GPATCH</div>
+        </div>
+      </div>
+
+      <div class="patch-info-card" id="patchInfoCard">
+        <div class="pi-header">
+          <div class="pi-title">ℹ️ Informações do Patch</div>
+          <div class="pi-tag" id="piVersion">v1.0</div>
+        </div>
+        <div class="pi-grid">
+          <div class="pi-item"><span class="pi-label">Jogo</span><span class="pi-value" id="piGame">-</span></div>
+          <div class="pi-item"><span class="pi-label">Patch</span><span class="pi-value" id="piPatch">-</span></div>
+          <div class="pi-item"><span class="pi-label">Autor</span><span class="pi-value" id="piAuthor">-</span></div>
+          <div class="pi-item"><span class="pi-label">Idioma</span><span class="pi-value" id="piLang">-</span></div>
+          <div class="pi-item"><span class="pi-label">Tipo</span><span class="pi-value" id="piType">-</span></div>
+          <div class="pi-item"><span class="pi-label">ISO Recomendada</span><span class="pi-value" id="piIso">-</span></div>
         </div>
       </div>
 
@@ -999,7 +1092,8 @@
           <button class="mode-btn" id="btnModeFile" onclick="setCreateMode('file')">📁 Arquivo</button>
         </div>
         <div id="createModeDesc" style="font-size:10px;color:var(--text2);margin-top:8px;line-height:1.6">
-          <strong>Modo automático:</strong> escolhe o melhor método (Binário para arquivos grandes, Arquivo para soltos).
+          <strong>Modo automático:</strong> escolhe o melhor método (Binário para arquivos grandes, Arquivo para
+          soltos).
         </div>
       </div>
 
@@ -1072,7 +1166,10 @@
       <div class="result-card" id="createResult"></div>
     </div>
 
-    <footer>GPatch · Processamento 100% local · Nenhum dado enviado</footer>
+    <footer>
+      GPatch · Processamento 100% local · Nenhum dado enviado<br>
+      <a href="#" onclick="showEmbed(); return false;" style="color:var(--cyan); text-decoration:none; margin-top:12px; display:inline-block; padding: 4px;">&lt;/&gt; Código de Embed</a>
+    </footer>
   </div>
 
   <script>
@@ -1216,9 +1313,14 @@
       if (key === 'applyPatch') {
         // O patch .gpatch/.dubpatch é carregado inteiro (é pequeno)
         const reader = new FileReader();
-        reader.onload = e => {
-          state[key] = { buffer: e.target.result, name: file.name, size: file.size };
+        reader.onload = async e => {
+          const buffer = e.target.result;
+          state[key] = { buffer: buffer, name: file.name, size: file.size };
           updateDropZone(key, file);
+          
+          const meta = await extractPatchMeta(buffer);
+          showPatchInfo(meta);
+          
           checkButtons();
           resetResult('apply');
         };
@@ -1257,6 +1359,50 @@
       document.getElementById(mode + 'Result').className = 'result-card';
       document.getElementById(mode + 'Result').innerHTML = '';
       document.getElementById(mode + 'Progress').classList.remove('visible');
+    }
+
+    async function extractPatchMeta(buffer) {
+      try {
+        const magic = new Uint8Array(buffer, 0, 4);
+        const isGPBin = (magic[0] === 0x47 && magic[1] === 0x50 && magic[2] === 0x03);
+        if (isGPBin) {
+          const view = new DataView(buffer);
+          const metaLen = view.getUint32(4, true);
+          const metaJson = new TextDecoder().decode(new Uint8Array(buffer, 8, metaLen));
+          return JSON.parse(metaJson);
+        } else {
+          const zip = await JSZip.loadAsync(buffer);
+          const metaStr = await zip.file('metadata.json').async('string');
+          return JSON.parse(metaStr);
+        }
+      } catch (e) {
+        console.warn('Falha ao extrair metadados:', e);
+        return null;
+      }
+    }
+
+    function showPatchInfo(meta) {
+      const card = document.getElementById('patchInfoCard');
+      if (!meta) {
+        card.classList.remove('visible');
+        return;
+      }
+      
+      const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        el.textContent = val || 'Não informado';
+        el.classList.toggle('empty', !val);
+      };
+
+      setVal('piGame', meta.game);
+      setVal('piPatch', meta.patchName);
+      setVal('piAuthor', meta.author);
+      setVal('piLang', meta.language);
+      setVal('piType', meta.type);
+      setVal('piIso', meta.iso);
+      
+      document.getElementById('piVersion').textContent = meta.version ? `v${meta.version}` : 'v1.0';
+      card.classList.add('visible');
     }
 
     // ═══════════════════════════════════════════════
@@ -1299,46 +1445,88 @@
       const patchURL = params.get('patch');
       if (!patchURL) return;
       try {
+        const banner = document.getElementById('preloadBanner');
+        const pbName = document.getElementById('preloadName');
+        const pbLabel = document.querySelector('.pb-label');
+        
+        pbLabel.textContent = "Baixando Patch...";
+        pbName.textContent = "Aguarde...";
+        banner.classList.add('visible');
+        document.getElementById('applyPatchStep').style.display = 'none';
+
         const res = await fetch(patchURL);
         const buf = await res.arrayBuffer();
-        const zip = await JSZip.loadAsync(buf);
-        const meta = JSON.parse(await zip.file('metadata.json').async('string'));
+        
+        const meta = await extractPatchMeta(buf);
+        if (!meta) throw new Error("Metadados inválidos");
+        
         preloadedPatchBuffer = buf;
         preloadedPatchMeta = meta;
         state.applyPatch = { buffer: buf, name: meta.patchName + '.gpatch', size: buf.byteLength };
 
-        const banner = document.getElementById('preloadBanner');
-        const name = document.getElementById('preloadName');
+        pbLabel.textContent = "Patch pré-carregado";
         const label = `${meta.game || 'PS2 Game'} — ${meta.patchName || 'Dublagem'}`;
-        name.textContent = label;
-        banner.classList.add('visible');
-
-        document.getElementById('applyPatchStep').style.display = 'none';
+        pbName.textContent = label;
+        showPatchInfo(meta);
         checkButtons();
       } catch (e) {
         console.warn('Falha ao carregar patch da URL:', e);
+        clearPreload();
       }
+    }
+
+    function selectPreset(p) {
+      clearPreload();
+      document.getElementById('applyPatchStep').style.display = 'none';
+      const banner = document.getElementById('preloadBanner');
+      const pbName = document.getElementById('preloadName');
+      const pbLabel = document.querySelector('.pb-label');
+      
+      pbLabel.textContent = "Patch Selecionado (Aguardando Download)";
+      
+      pbName.innerHTML = `
+        <div style="display:flex; flex-wrap: wrap; gap: 8px; justify-content:space-between; align-items:center; width:100%; margin-top: 4px;">
+          <span>${p.name}</span>
+          <button onclick="loadPreset('${p.url}', '${p.name}')" style="background:var(--cyan); color:#000; border:none; padding:6px 12px; border-radius:6px; font-family:'Space Mono',monospace; font-size:11px; font-weight:bold; cursor:pointer; box-shadow:0 0 10px rgba(0, 212, 255, 0.4);">⬇️ Baixar Patch para Memória</button>
+        </div>
+      `;
+      
+      banner.classList.add('visible');
+      
+      showPatchInfo({
+        game: p.name,
+        patchName: p.type || 'Patch',
+        author: p.author || 'Desconhecido',
+        language: p.language || '-',
+        type: p.type || '-',
+        iso: p.iso || '-',
+        version: p.version || ''
+      });
+      
+      checkButtons();
     }
 
     async function loadPreset(url, name) {
       try {
-        document.getElementById('applyPatchStep').style.display = 'none';
-        const banner = document.getElementById('preloadBanner');
         const pbName = document.getElementById('preloadName');
+        const pbLabel = document.querySelector('.pb-label');
 
-        pbName.textContent = `Baixando: ${name}...`;
-        banner.classList.add('visible');
+        pbLabel.textContent = "Baixando Patch...";
+        pbName.innerHTML = `<span>${name}</span> <span style="color:var(--cyan); font-size:10px; margin-left:10px; animation: pulse-border 1s infinite;">Aguarde...</span>`;
 
         const res = await fetch(url);
         const buf = await res.arrayBuffer();
-        const zip = await JSZip.loadAsync(buf);
-        const meta = JSON.parse(await zip.file('metadata.json').async('string'));
+        
+        const meta = await extractPatchMeta(buf);
+        if (!meta) throw new Error("Metadados inválidos");
 
         preloadedPatchBuffer = buf;
         preloadedPatchMeta = meta;
         state.applyPatch = { buffer: buf, name: meta.patchName + '.gpatch', size: buf.byteLength };
 
+        pbLabel.textContent = "Patch pré-carregado";
         pbName.textContent = `${meta.game || name} — ${meta.patchName || 'Dublagem'}`;
+        showPatchInfo(meta);
         checkButtons();
       } catch (e) {
         console.error('Falha ao baixar preset:', e);
@@ -1353,7 +1541,22 @@
       state.applyPatch = null;
       document.getElementById('preloadBanner').classList.remove('visible');
       document.getElementById('applyPatchStep').style.display = '';
+      const pbLabel = document.querySelector('.pb-label');
+      if (pbLabel) pbLabel.textContent = "Patch pré-carregado";
+      showPatchInfo(null);
       checkButtons();
+    }
+
+    function showEmbed() {
+      let baseUrl = window.location.href.split('?')[0];
+      const customUrl = prompt("Você quer usar uma lista de patches personalizada no embed?\nSe sim, cole a URL do seu próprio arquivo presets.json abaixo.\nSe quiser usar a lista padrão, deixe em branco e dê OK:");
+      
+      if (customUrl && customUrl.trim() !== '') {
+        baseUrl += '?presets=' + encodeURIComponent(customUrl.trim());
+      }
+      
+      const code = `<iframe src="${baseUrl}" width="100%" height="800" style="border:none; border-radius:12px; max-width:800px; margin:0 auto; display:block;"></iframe>`;
+      prompt("Copie o código abaixo para incorporar o GPatch no seu site:", code);
     }
 
     // ═══════════════════════════════════════════════
@@ -1863,7 +2066,7 @@
             compression: "DEFLATE",
             compressionOptions: { level: 6 }
           }, (metadata) => {
-          setProgress('createFill', 'createPct', 'createLog', 70 + metadata.percent * 0.3, `Comprimindo Zip: ${metadata.percent.toFixed(1)}%...`);
+            setProgress('createFill', 'createPct', 'createLog', 70 + metadata.percent * 0.3, `Comprimindo Zip: ${metadata.percent.toFixed(1)}%...`);
           });
 
           const patchSize = finalBlob.size;
@@ -2191,7 +2394,9 @@
     async function loadPresetsFromJSON() {
       const gallery = document.getElementById('presetsGallery');
       try {
-        const res = await fetch('https://huggingface.co/datasets/RafaG/godoy/raw/main/presets.json');
+        const params = new URLSearchParams(location.search);
+        const presetsUrl = params.get('presets') || 'https://huggingface.co/datasets/RafaG/godoy/raw/main/presets.json';
+        const res = await fetch(presetsUrl);
         const presets = await res.json();
         gallery.innerHTML = '';
         if (!presets.length) {
@@ -2201,10 +2406,13 @@
         for (const p of presets) {
           const card = document.createElement('div');
           card.className = 'preset-card';
-          card.onclick = () => loadPreset(p.url, `${p.name} (${p.type || 'Patch'})`);
-          const typeTag = p.type === 'Dublado'
-            ? '<span class="preset-tag tag-dub">Dublado</span>'
-            : (p.type ? `<span class="preset-tag tag-sub">${p.type}</span>` : '');
+          card.onclick = () => selectPreset(p);
+          let typeTag = '';
+          if (p.type) {
+            const mainType = p.type.split(',')[0].trim();
+            if (mainType.toLowerCase() === 'dublado') typeTag = '<span class="preset-tag tag-dub">Dublado</span>';
+            else typeTag = `<span class="preset-tag tag-sub">${mainType}</span>`;
+          }
           const isoTag = p.iso ? `<span class="preset-tag tag-iso">${p.iso}</span>` : '';
           const sizeTag = p.size ? `<span class="preset-tag tag-size">${p.size}</span>` : '';
           card.innerHTML = `
