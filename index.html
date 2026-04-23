@@ -2219,7 +2219,7 @@
         };
         const metaBytes = new TextEncoder().encode(JSON.stringify(metaObj));
 
-        await log(`${sectorEntries.length} setores, ${fmtSize(totalRunBytes)} de deltas — serializando...`, 56);
+        await log(`${sectorEntries.length} setores, ${fmtSize(totalRunBytes)} de deltas — preparando...`, 56);
 
         let rawSize = 4;
         for (const entry of sectorEntries) {
@@ -2227,78 +2227,140 @@
           for (const r of entry.runs) rawSize += 4 + r.l;
         }
 
-        await log(`Serializando ${fmtSize(rawSize)} de dados brutos...`, 58);
+        await log(`Serializando e Comprimindo ${fmtSize(rawSize)} de dados brutos...`, 58);
 
-        const rawBuf = new Uint8Array(rawSize);
-        const rawDv = new DataView(rawBuf.buffer);
-        let wp = 0;
-        rawDv.setUint32(wp, sectorEntries.length, true); wp += 4;
+        let compressedChunks = [];
+        let totalCompLen = 0;
+        let isCompressed = true;
 
-        for (let j = 0; j < sectorEntries.length; j++) {
-          const entry = sectorEntries[j];
-          rawDv.setUint32(wp, entry.idx, true); wp += 4;
-          rawDv.setUint16(wp, entry.runs.length, true); wp += 2;
-          for (const r of entry.runs) {
-            rawDv.setUint16(wp, r.o, true); wp += 2;
-            rawDv.setUint16(wp, r.l, true); wp += 2;
-            rawBuf.set(r.d, wp); wp += r.l;
-          }
-          if (j % 50000 === 0 && j > 0) {
-            setProgress('createFill', 'createPct', 'createLog', 58 + (j / sectorEntries.length) * 10,
-              `Serializando: ${j}/${sectorEntries.length}...`);
-            await sleep(0);
-          }
-        }
-
-        sectorEntries.length = 0;
-
-        await log('Comprimindo com DEFLATE (pode demorar)...', 70);
-
-        let compressedBuf;
         try {
           const cs = new CompressionStream('deflate');
           const writer = cs.writable.getWriter();
           const reader = cs.readable.getReader();
-          const compressedChunks = [];
-
-          const COMP_CHUNK = 4 * 1024 * 1024;
-          const writePromise = (async () => {
-            for (let i = 0; i < rawBuf.length; i += COMP_CHUNK) {
-              const chunk = rawBuf.subarray(i, Math.min(i + COMP_CHUNK, rawBuf.length));
-              await writer.write(chunk);
-              setProgress('createFill', 'createPct', 'createLog',
-                70 + (i / rawBuf.length) * 20,
-                `Comprimindo: ${fmtSize(i)}/${fmtSize(rawBuf.length)}...`);
-            }
-            await writer.close();
-          })();
 
           const readPromise = (async () => {
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
               compressedChunks.push(value);
+              totalCompLen += value.length;
             }
           })();
 
-          await Promise.all([writePromise, readPromise]);
+          const writePromise = (async () => {
+            const numSectorsBuf = new Uint8Array(4);
+            new DataView(numSectorsBuf.buffer).setUint32(0, sectorEntries.length, true);
+            await writer.write(numSectorsBuf);
 
-          let totalCompLen = 0;
-          for (const c of compressedChunks) totalCompLen += c.length;
-          compressedBuf = new Uint8Array(totalCompLen);
-          let cOff = 0;
-          for (const c of compressedChunks) {
-            compressedBuf.set(c, cOff);
-            cOff += c.length;
-          }
+            let bytesWritten = 4;
+            let currentChunk = new Uint8Array(4 * 1024 * 1024);
+            let chunkOff = 0;
+
+            const flush = async () => {
+              if (chunkOff > 0) {
+                await writer.write(currentChunk.subarray(0, chunkOff));
+                currentChunk = new Uint8Array(4 * 1024 * 1024);
+                chunkOff = 0;
+              }
+            };
+
+            for (let j = 0; j < sectorEntries.length; j++) {
+              const entry = sectorEntries[j];
+              let entryRawSize = 6;
+              for (const r of entry.runs) entryRawSize += 4 + r.l;
+              
+              if (chunkOff + entryRawSize > currentChunk.length) {
+                await flush();
+                if (entryRawSize > currentChunk.length) {
+                  currentChunk = new Uint8Array(entryRawSize + 4 * 1024 * 1024);
+                }
+              }
+
+              const entryDv = new DataView(currentChunk.buffer, currentChunk.byteOffset + chunkOff);
+              let wp = 0;
+              entryDv.setUint32(wp, entry.idx, true); wp += 4;
+              entryDv.setUint16(wp, entry.runs.length, true); wp += 2;
+              for (const r of entry.runs) {
+                entryDv.setUint16(wp, r.o, true); wp += 2;
+                entryDv.setUint16(wp, r.l, true); wp += 2;
+                currentChunk.set(r.d, chunkOff + wp); wp += r.l;
+              }
+              chunkOff += entryRawSize;
+              bytesWritten += entryRawSize;
+
+              if (j % 10000 === 0 && j > 0) {
+                setProgress('createFill', 'createPct', 'createLog', 58 + (bytesWritten / rawSize) * 34,
+                  `Processando: ${Math.round((bytesWritten / rawSize) * 100)}%...`);
+                await sleep(0);
+              }
+            }
+            await flush();
+            await writer.close();
+          })();
+
+          await Promise.all([writePromise, readPromise]);
+          metaObj.compressed = true;
+          
         } catch (compErr) {
-          console.warn('CompressionStream não disponível, salvando sem comprimir:', compErr);
-          compressedBuf = rawBuf;
+          console.warn('CompressionStream falhou, salvando raw:', compErr);
+          isCompressed = false;
           metaObj.compressed = false;
+          compressedChunks = [];
+          totalCompLen = rawSize;
+          
+          const numSectorsBuf = new Uint8Array(4);
+          new DataView(numSectorsBuf.buffer).setUint32(0, sectorEntries.length, true);
+          compressedChunks.push(numSectorsBuf);
+          
+          let currentChunk = new Uint8Array(4 * 1024 * 1024);
+          let chunkOff = 0;
+          let bytesWritten = 4;
+          
+          const flush = () => {
+            if (chunkOff > 0) {
+              compressedChunks.push(currentChunk.slice(0, chunkOff));
+              currentChunk = new Uint8Array(4 * 1024 * 1024);
+              chunkOff = 0;
+            }
+          };
+
+          for (let j = 0; j < sectorEntries.length; j++) {
+            const entry = sectorEntries[j];
+            let entryRawSize = 6;
+            for (const r of entry.runs) entryRawSize += 4 + r.l;
+            
+            if (chunkOff + entryRawSize > currentChunk.length) {
+              flush();
+              if (entryRawSize > currentChunk.length) {
+                currentChunk = new Uint8Array(entryRawSize + 4 * 1024 * 1024);
+              }
+            }
+            
+            const entryDv = new DataView(currentChunk.buffer, currentChunk.byteOffset + chunkOff);
+            let wp = 0;
+            entryDv.setUint32(wp, entry.idx, true); wp += 4;
+            entryDv.setUint16(wp, entry.runs.length, true); wp += 2;
+            for (const r of entry.runs) {
+              entryDv.setUint16(wp, r.o, true); wp += 2;
+              entryDv.setUint16(wp, r.l, true); wp += 2;
+              currentChunk.set(r.d, chunkOff + wp); wp += r.l;
+            }
+            chunkOff += entryRawSize;
+            bytesWritten += entryRawSize;
+            
+            if (j % 10000 === 0 && j > 0) {
+              setProgress('createFill', 'createPct', 'createLog', 58 + (bytesWritten / rawSize) * 34,
+                `Serializando: ${Math.round((bytesWritten / rawSize) * 100)}%...`);
+              await sleep(0);
+            }
+          }
+          flush();
         }
 
-        const compressionRatio = ((1 - compressedBuf.length / rawBuf.length) * 100).toFixed(1);
-        await log(`Comprimido: ${fmtSize(rawBuf.length)} → ${fmtSize(compressedBuf.length)} (${compressionRatio}% redução)`, 92);
+        sectorEntries.length = 0; // free memory
+
+        const compressionRatio = isCompressed ? ((1 - totalCompLen / rawSize) * 100).toFixed(1) : 0;
+        await log(`Pronto: ${fmtSize(rawSize)} → ${fmtSize(totalCompLen)} (${compressionRatio}% redução)`, 92);
 
         const hdrSize = 8 + metaBytes.length + 4;
         const hdrBuf = new ArrayBuffer(hdrSize);
@@ -2310,9 +2372,9 @@
         hdrU8[3] = metaObj.compressed ? 0x01 : 0x00;
         hdrDv.setUint32(4, metaBytes.length, true);
         hdrU8.set(metaBytes, 8);
-        hdrDv.setUint32(8 + metaBytes.length, rawBuf.length, true);
+        hdrDv.setUint32(8 + metaBytes.length, rawSize, true);
 
-        const finalBlob = new Blob([hdrBuf, compressedBuf], { type: 'application/octet-stream' });
+        const finalBlob = new Blob([hdrBuf, ...compressedChunks], { type: 'application/octet-stream' });
         const patchSize = finalBlob.size;
         const url = URL.createObjectURL(finalBlob);
         const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.gpatch`;
