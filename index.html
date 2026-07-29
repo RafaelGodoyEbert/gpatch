@@ -942,6 +942,234 @@
         transform: translateX(100%);
       }
     }
+
+    /* ── MODAL EMBED & FULL PAGE EMBED ── */
+    body.embed-full .container {
+      max-width: 100%;
+      padding: 16px;
+    }
+
+    body.is-embed footer .embed-link {
+      display: none;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 6, 15, 0.88);
+      backdrop-filter: blur(8px);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8), 0 0 20px var(--glow);
+      display: flex;
+      flex-direction: column;
+      animation: modalSlide 0.25s ease;
+    }
+
+    @keyframes modalSlide {
+      from { transform: translateY(16px) scale(0.97); }
+      to { transform: translateY(0) scale(1); }
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 22px;
+      letter-spacing: 2px;
+      color: var(--cyan);
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+
+    .modal-close:hover {
+      color: #fff;
+    }
+
+    .modal-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .embed-option-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .embed-label {
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text2);
+    }
+
+    .embed-radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .embed-radio-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .embed-radio-card:hover {
+      border-color: var(--cyan);
+      background: rgba(0, 212, 255, 0.04);
+    }
+
+    .embed-radio-card input[type="radio"] {
+      margin-top: 3px;
+      accent-color: var(--cyan);
+    }
+
+    .radio-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .radio-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .radio-desc {
+      font-size: 10px;
+      color: var(--text2);
+    }
+
+    .embed-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    .embed-checkbox-label input[type="checkbox"] {
+      accent-color: var(--cyan);
+      width: 16px;
+      height: 16px;
+    }
+
+    .embed-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .embed-input:focus {
+      border-color: var(--cyan);
+    }
+
+    .embed-code-box {
+      width: 100%;
+      height: 90px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--cyan);
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      resize: none;
+      outline: none;
+    }
+
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .modal-btn {
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .modal-btn.primary {
+      background: linear-gradient(135deg, #0055cc, #0099ff);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(0, 120, 255, 0.3);
+    }
+
+    .modal-btn.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text2);
+    }
+
+    .modal-btn:active {
+      transform: scale(0.97);
+    }
   </style>
 </head>
 
@@ -1169,10 +1397,69 @@
 
     <footer>
       GPatch · Processamento 100% local · Nenhum dado enviado<br>
-      <a href="#" onclick="showEmbed(); return false;"
+      <a href="#" class="embed-link" onclick="showEmbed(); return false;"
         style="color:var(--cyan); text-decoration:none; margin-top:12px; display:inline-block; padding: 4px;">&lt;/&gt;
         Código de Embed</a>
     </footer>
+  </div>
+
+  <!-- ══════════════════ EMBED MODAL ══════════════════ -->
+  <div id="embedModal" class="modal-overlay" onclick="closeEmbedModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">&lt;/&gt; Gerador de Código Embed</div>
+        <button class="modal-close" onclick="closeEmbedModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="embed-option-group">
+          <label class="embed-label">Modo de Exibição / Tamanho</label>
+          <div class="embed-radio-group">
+            <label class="embed-radio-card">
+              <input type="radio" name="embedLayout" value="standard" checked onchange="updateEmbedCode()">
+              <div class="radio-content">
+                <span class="radio-title">📦 Padrão (Caixa 800px)</span>
+                <span class="radio-desc">Ideal para blogs e postagens com largura fixa</span>
+              </div>
+            </label>
+            <label class="embed-radio-card">
+              <input type="radio" name="embedLayout" value="full" onchange="updateEmbedCode()">
+              <div class="radio-content">
+                <span class="radio-title">🖥️ Página Inteira / Tela Cheia</span>
+                <span class="radio-desc">Ocupa 100% da largura e altura disponível</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-checkbox-label">
+            <input type="checkbox" id="embedHideCreate" checked onchange="updateEmbedCode()">
+            <span>Ocultar aba "Criar Patch" (exibir somente "Aplicar Patch")</span>
+          </label>
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label" for="embedPresetsUrl">URL de Presets Personalizada (Opcional)</label>
+          <input type="text" id="embedPresetsUrl" class="embed-input" placeholder="https://exemplo.com/meus-presets.json" oninput="updateEmbedCode()">
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label" for="embedPatchUrl">URL do Patch pré-carregado (Opcional)</label>
+          <input type="text" id="embedPatchUrl" class="embed-input" placeholder="https://exemplo.com/meu-patch.gpatch" oninput="updateEmbedCode()">
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label">Código HTML Gerado</label>
+          <textarea id="embedCodeOutput" class="embed-code-box" readonly onclick="this.select()"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnCopyEmbed" class="modal-btn primary" onclick="copyEmbedCode()">📋 Copiar Código</button>
+        <button class="modal-btn secondary" onclick="closeEmbedModal()">Fechar</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -1550,16 +1837,107 @@
       checkButtons();
     }
 
-    function showEmbed() {
-      let baseUrl = window.location.href.split('?')[0];
-      const customUrl = prompt("Você quer usar uma lista de patches personalizada no embed?\nSe sim, cole a URL do seu próprio arquivo presets.json abaixo.\nSe quiser usar a lista padrão, deixe em branco e dê OK:");
+    // ═══════════════════════════════════════════════
+    //  EMBED & URL OPTIONS
+    // ═══════════════════════════════════════════════
+    function checkURLParams() {
+      const params = new URLSearchParams(location.search);
 
-      if (customUrl && customUrl.trim() !== '') {
-        baseUrl += '?presets=' + encodeURIComponent(customUrl.trim());
+      // Desativar botão "Criar Patch" se nocreate=1 ou hide_create=1
+      const hideCreate = params.get('nocreate') === '1' || params.get('hide_create') === '1' || params.get('nocreate') === 'true';
+      if (hideCreate) {
+        const btnCreate = document.getElementById('btnCreate');
+        if (btnCreate) btnCreate.style.display = 'none';
+        const modeToggle = document.querySelector('.mode-toggle');
+        if (modeToggle) modeToggle.style.display = 'none';
       }
 
-      const code = `<iframe src="${baseUrl}" width="100%" height="800" style="border:none; border-radius:12px; max-width:800px; margin:0 auto; display:block;"></iframe>`;
-      prompt("Copie o código abaixo para incorporar o GPatch no seu site:", code);
+      // Modo página inteira (full page)
+      const isFull = params.get('full') === '1' || params.get('full') === 'true';
+      if (isFull) {
+        document.body.classList.add('embed-full');
+      }
+
+      // Se estiver incorporado
+      const isEmbed = params.get('embed') === '1' || params.get('embed') === 'true';
+      if (isEmbed || window.self !== window.top) {
+        document.body.classList.add('is-embed');
+      }
+    }
+
+    function showEmbed() {
+      const modal = document.getElementById('embedModal');
+      if (modal) {
+        modal.classList.add('active');
+        updateEmbedCode();
+      }
+    }
+
+    function closeEmbedModal(e) {
+      if (!e || e.target === document.getElementById('embedModal') || (e.currentTarget && (e.currentTarget.classList.contains('modal-close') || e.currentTarget.classList.contains('secondary')))) {
+        document.getElementById('embedModal').classList.remove('active');
+      }
+    }
+
+    function updateEmbedCode() {
+      let baseUrl = window.location.href.split('?')[0];
+      const params = new URLSearchParams();
+
+      const layout = document.querySelector('input[name="embedLayout"]:checked')?.value || 'standard';
+      const hideCreate = document.getElementById('embedHideCreate')?.checked;
+      const presetsUrl = document.getElementById('embedPresetsUrl')?.value?.trim();
+      const patchUrl = document.getElementById('embedPatchUrl')?.value?.trim();
+
+      params.set('embed', '1');
+
+      if (hideCreate) {
+        params.set('nocreate', '1');
+      }
+
+      if (layout === 'full') {
+        params.set('full', '1');
+      }
+
+      if (presetsUrl) {
+        params.set('presets', presetsUrl);
+      }
+
+      if (patchUrl) {
+        params.set('patch', patchUrl);
+      }
+
+      const finalUrl = `${baseUrl}?${params.toString()}`;
+
+      let code = '';
+      if (layout === 'full') {
+        code = `<iframe src="${finalUrl}" width="100%" height="100%" style="border:none; width:100%; height:100vh; min-height:800px; display:block;"></iframe>`;
+      } else {
+        code = `<iframe src="${finalUrl}" width="100%" height="800" style="border:none; border-radius:12px; max-width:800px; margin:0 auto; display:block;"></iframe>`;
+      }
+
+      const output = document.getElementById('embedCodeOutput');
+      if (output) output.value = code;
+    }
+
+    async function copyEmbedCode() {
+      const output = document.getElementById('embedCodeOutput');
+      const btn = document.getElementById('btnCopyEmbed');
+      if (!output) return;
+
+      try {
+        await navigator.clipboard.writeText(output.value);
+        const originalText = btn.textContent;
+        btn.textContent = '✅ Copiado!';
+        btn.style.background = 'linear-gradient(135deg, #005533, #00aa55)';
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.style.background = '';
+        }, 2000);
+      } catch (err) {
+        output.select();
+        document.execCommand('copy');
+        alert('Código copiado!');
+      }
     }
 
     // ═══════════════════════════════════════════════
@@ -2498,6 +2876,7 @@
     // ═══════════════════════════════════════════════
     //  INIT
     // ═══════════════════════════════════════════════
+    checkURLParams();
     loadPresetsFromJSON();
     checkURLPatch();
   </script>
