@@ -1316,7 +1316,8 @@
         <div class="step-title">Método de Comparação</div>
         <div class="step-desc">Escolha como o patch será gerado.</div>
         <div class="mode-toggle" style="margin:0">
-          <button class="mode-btn active" id="btnModeAuto" onclick="setCreateMode('auto')">🤖 Automático</button>
+          <button class="mode-btn active" id="btnModeAuto" onclick="setCreateMode('auto')">🤖 Auto</button>
+          <button class="mode-btn" id="btnModeXdelta" onclick="setCreateMode('xdelta')">🔺 xdelta3</button>
           <button class="mode-btn" id="btnModeBin" onclick="setCreateMode('binary')">⚡ Binário</button>
           <button class="mode-btn" id="btnModeFile" onclick="setCreateMode('file')">📁 Arquivo</button>
         </div>
@@ -1747,6 +1748,7 @@
     function setCreateMode(m) {
       createMode = m;
       document.getElementById('btnModeAuto').classList.toggle('active', m === 'auto');
+      document.getElementById('btnModeXdelta').classList.toggle('active', m === 'xdelta');
       document.getElementById('btnModeFile').classList.toggle('active', m === 'file');
       document.getElementById('btnModeBin').classList.toggle('active', m === 'binary');
       const desc = document.getElementById('createModeDesc');
@@ -1754,11 +1756,14 @@
       if (m === 'auto') {
         desc.innerHTML = '<strong>Modo automático:</strong> escolhe o melhor método (Binário para arquivos grandes, Arquivo para soltos).';
         btn.innerHTML = '⚡ Gerar .gpatch (Auto)';
+      } else if (m === 'xdelta') {
+        desc.innerHTML = '<strong>Padrão xdelta3:</strong> gera um arquivo <strong>.xdelta</strong> padrão da indústria (RFC 3284 VCDIFF), compatível com emuladores, Rom Patcher e PC.';
+        btn.innerHTML = '🔺 Gerar .xdelta (Padrão de Mercado)';
       } else if (m === 'file') {
         desc.innerHTML = '<strong>Modo arquivo:</strong> melhor para caso os arquivos internos forem soltos.';
         btn.innerHTML = '⚡ Gerar .gpatch (Arquivo)';
       } else {
-        desc.innerHTML = '<strong>Modo binário:</strong> melhor para caso os arquivos internos sejas grandes 2gb+.';
+        desc.innerHTML = '<strong>Modo binário:</strong> melhor para caso os arquivos internos sejam grandes 2gb+.';
         btn.innerHTML = '⚡ Gerar .gpatch (Binário)';
       }
     }
@@ -2517,6 +2522,172 @@
         const isoRegion = document.getElementById('infoISO').value.trim() || 'USA';
         const patchVersion = document.getElementById('infoVersion').value.trim() || '1.0';
         const patchLanguage = document.getElementById('infoLanguage').value.trim() || '';
+
+        if (mode === 'xdelta') {
+          await log('Modo xdelta3 selecionado (RFC 3284 VCDIFF)...', 5);
+          const WIN_SIZE = 2 * 1024 * 1024; // 2MB por janela deslizante
+          const maxSize = Math.max(origFile.size, modFile.size);
+          const totalWindows = Math.ceil(modFile.size / WIN_SIZE);
+
+          const winParts = [
+            new Uint8Array([0xD6, 0xC3, 0xC4, 0x00, 0x00]) // Cabeçalho padrão VCDIFF
+          ];
+
+          let totalDiffBytes = 0;
+          let changedWindows = 0;
+
+          function write7BitInt(arr, val) {
+            val = Number(val);
+            const bytes = [];
+            bytes.push(val & 0x7F);
+            val = Math.floor(val / 128);
+            while (val > 0) {
+              bytes.push((val & 0x7F) | 0x80);
+              val = Math.floor(val / 128);
+            }
+            bytes.reverse();
+            for (let b of bytes) arr.push(b);
+          }
+
+          function buildVCDIFFWin(sourceOffset, sourceLen, targetLen, operations) {
+            const dataBuf = [];
+            const instBuf = [];
+            const addrBuf = [];
+
+            for (const op of operations) {
+              if (op.type === 'COPY') {
+                instBuf.push(19); // COPY mode SELF (0)
+                write7BitInt(instBuf, op.len);
+                write7BitInt(addrBuf, op.addr);
+              } else if (op.type === 'ADD') {
+                instBuf.push(1); // ADD
+                write7BitInt(instBuf, op.data.length);
+                for (let j = 0; j < op.data.length; j++) dataBuf.push(op.data[j]);
+              }
+            }
+
+            const deltaHead = [];
+            write7BitInt(deltaHead, targetLen);
+            deltaHead.push(0x00);
+            write7BitInt(deltaHead, dataBuf.length);
+            write7BitInt(deltaHead, instBuf.length);
+            write7BitInt(deltaHead, addrBuf.length);
+
+            const deltaEncodingLen = deltaHead.length + dataBuf.length + instBuf.length + addrBuf.length;
+
+            const winHead = [ 0x01 ]; // VCD_SOURCE
+            write7BitInt(winHead, sourceLen);
+            write7BitInt(winHead, sourceOffset);
+            write7BitInt(winHead, deltaEncodingLen);
+
+            const totalLen = winHead.length + deltaHead.length + dataBuf.length + instBuf.length + addrBuf.length;
+            const res = new Uint8Array(totalLen);
+            let ptr = 0;
+            res.set(winHead, ptr); ptr += winHead.length;
+            res.set(deltaHead, ptr); ptr += deltaHead.length;
+            res.set(dataBuf, ptr); ptr += dataBuf.length;
+            res.set(instBuf, ptr); ptr += instBuf.length;
+            res.set(addrBuf, ptr); ptr += addrBuf.length;
+            return res;
+          }
+
+          for (let w = 0; w < totalWindows; w++) {
+            const wStart = w * WIN_SIZE;
+            const wEnd = Math.min((w + 1) * WIN_SIZE, modFile.size);
+            const wLen = wEnd - wStart;
+            const srcLen = (wStart < origFile.size) ? Math.min(wLen, origFile.size - wStart) : 0;
+
+            const [oChunk, mChunk] = await Promise.all([
+              srcLen > 0 ? origFile.slice(wStart, wStart + srcLen).arrayBuffer() : new ArrayBuffer(0),
+              modFile.slice(wStart, wEnd).arrayBuffer()
+            ]);
+
+            const oU8 = new Uint8Array(oChunk);
+            const mU8 = new Uint8Array(mChunk);
+
+            let isIdentical = (srcLen === wLen);
+            if (isIdentical) {
+              const dv32O = new Uint32Array(oChunk);
+              const dv32M = new Uint32Array(mChunk);
+              const words = dv32O.length;
+              for (let k = 0; k < words; k++) {
+                if (dv32O[k] !== dv32M[k]) { isIdentical = false; break; }
+              }
+              if (isIdentical) {
+                for (let k = words * 4; k < wLen; k++) {
+                  if (oU8[k] !== mU8[k]) { isIdentical = false; break; }
+                }
+              }
+            }
+
+            if (isIdentical) {
+              winParts.push(buildVCDIFFWin(wStart, srcLen, wLen, [
+                { type: 'COPY', len: wLen, addr: 0 }
+              ]));
+            } else {
+              changedWindows++;
+              const ops = [];
+              let i = 0;
+              while (i < wLen) {
+                if (i < srcLen && oU8[i] === mU8[i]) {
+                  const matchStart = i;
+                  while (i < wLen && i < srcLen && oU8[i] === mU8[i]) i++;
+                  ops.push({ type: 'COPY', len: i - matchStart, addr: matchStart });
+                } else {
+                  const diffStart = i;
+                  while (i < wLen && (i >= srcLen || oU8[i] !== mU8[i])) i++;
+                  const diffLen = i - diffStart;
+                  totalDiffBytes += diffLen;
+                  ops.push({ type: 'ADD', data: mU8.subarray(diffStart, i) });
+                }
+              }
+              winParts.push(buildVCDIFFWin(wStart, srcLen, wLen, ops));
+            }
+
+            if (w % 8 === 0 || w === totalWindows - 1) {
+              const pct = 5 + Math.round((w / totalWindows) * 88);
+              setProgress('createFill', 'createPct', 'createLog', pct,
+                `Comparando xdelta: ${w + 1}/${totalWindows} janelas (${changedWindows} c/ alterações, ${fmtSize(totalDiffBytes)} delta)...`);
+              await sleep(0);
+            }
+          }
+
+          if (changedWindows === 0) {
+            throw new Error('Nenhuma diferença encontrada! As ISOs são idênticas.');
+          }
+
+          await log('Finalizando arquivo .xdelta...', 96);
+          const finalBlob = new Blob(winParts, { type: 'application/octet-stream' });
+          const patchSize = finalBlob.size;
+          const url = URL.createObjectURL(finalBlob);
+          const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.xdelta`;
+
+          await log('Patch .xdelta gerado com sucesso!', 100);
+
+          resultEl.className = 'result-card success visible';
+          resultEl.innerHTML = `
+            <div class="result-icon">🔺</div>
+            <div class="result-title">Patch xdelta3 Criado!</div>
+            <div class="result-stats">
+              <div class="stat-badge"><span class="stat-val">${changedWindows}</span><span class="stat-label">Janelas c/ Delta</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(totalDiffBytes)}</span><span class="stat-label">Bytes Modificados</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(patchSize)}</span><span class="stat-label">Tamanho .xdelta</span></div>
+              <div class="stat-badge"><span class="stat-val">${Math.round((1 - (patchSize / maxSize)) * 100)}%</span><span class="stat-label">Economia</span></div>
+            </div>
+            <div class="result-info">
+              <strong>${gameName}</strong> — ${patchName}<br>
+              ${author ? `Criado por: ${author}<br>` : ''}
+              Formato: <strong>xdelta3 padrão (RFC 3284 VCDIFF)</strong><br>
+              Compatível com ferramentas de PC (xdelta3 CLI, XDelta UI), Rom Patcher JS e emuladores.
+            </div>
+            <a class="dl-btn dl-btn-patch" style="background:linear-gradient(135deg, #0055cc, #0099ff);" href="${url}" download="${dlName}">
+              ⬇️ Baixar ${dlName}
+            </a>
+            <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
+          `;
+          btn.disabled = false;
+          return;
+        }
 
         if (mode === 'file') {
           await log('Analisando estrutura da ISO original...', 5);
