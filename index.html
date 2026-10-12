@@ -942,6 +942,234 @@
         transform: translateX(100%);
       }
     }
+
+    /* ── MODAL EMBED & FULL PAGE EMBED ── */
+    body.embed-full .container {
+      max-width: 100%;
+      padding: 16px;
+    }
+
+    body.is-embed footer .embed-link {
+      display: none;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 6, 15, 0.88);
+      backdrop-filter: blur(8px);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8), 0 0 20px var(--glow);
+      display: flex;
+      flex-direction: column;
+      animation: modalSlide 0.25s ease;
+    }
+
+    @keyframes modalSlide {
+      from { transform: translateY(16px) scale(0.97); }
+      to { transform: translateY(0) scale(1); }
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 22px;
+      letter-spacing: 2px;
+      color: var(--cyan);
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+
+    .modal-close:hover {
+      color: #fff;
+    }
+
+    .modal-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .embed-option-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .embed-label {
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text2);
+    }
+
+    .embed-radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .embed-radio-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .embed-radio-card:hover {
+      border-color: var(--cyan);
+      background: rgba(0, 212, 255, 0.04);
+    }
+
+    .embed-radio-card input[type="radio"] {
+      margin-top: 3px;
+      accent-color: var(--cyan);
+    }
+
+    .radio-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .radio-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .radio-desc {
+      font-size: 10px;
+      color: var(--text2);
+    }
+
+    .embed-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    .embed-checkbox-label input[type="checkbox"] {
+      accent-color: var(--cyan);
+      width: 16px;
+      height: 16px;
+    }
+
+    .embed-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .embed-input:focus {
+      border-color: var(--cyan);
+    }
+
+    .embed-code-box {
+      width: 100%;
+      height: 90px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--cyan);
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      resize: none;
+      outline: none;
+    }
+
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .modal-btn {
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .modal-btn.primary {
+      background: linear-gradient(135deg, #0055cc, #0099ff);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(0, 120, 255, 0.3);
+    }
+
+    .modal-btn.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text2);
+    }
+
+    .modal-btn:active {
+      transform: scale(0.97);
+    }
   </style>
 </head>
 
@@ -1006,13 +1234,13 @@
 
       <div class="step-card" id="applyPatchStep">
         <div class="step-label"><span class="step-num">2</span> Arquivo de Patch</div>
-        <div class="step-title">Arquivo .gpatch</div>
-        <div class="step-desc">Selecione o arquivo de patch da dublagem fornecido pelo criador do mod.</div>
+        <div class="step-title">Arquivo de Patch (.gpatch ou .xdelta)</div>
+        <div class="step-desc">Selecione o arquivo de patch (.gpatch da dublagem ou o padrão de mercado .xdelta).</div>
         <div class="drop-zone" id="dzApplyPatch">
-          <input type="file" accept=".gpatch,.dubpatch,.zip" onchange="loadFile('applyPatch',this)">
+          <input type="file" accept=".gpatch,.dubpatch,.zip,.xdelta,.vcdiff" onchange="loadFile('applyPatch',this)">
           <div class="dz-icon">📦</div>
           <div class="dz-text"><strong>Toque para selecionar</strong><br>ou arraste o arquivo aqui</div>
-          <div class="dz-tag">.GPATCH</div>
+          <div class="dz-tag">.GPATCH · .XDELTA · .ZIP</div>
         </div>
       </div>
 
@@ -1169,10 +1397,69 @@
 
     <footer>
       GPatch · Processamento 100% local · Nenhum dado enviado<br>
-      <a href="#" onclick="showEmbed(); return false;"
+      <a href="#" class="embed-link" onclick="showEmbed(); return false;"
         style="color:var(--cyan); text-decoration:none; margin-top:12px; display:inline-block; padding: 4px;">&lt;/&gt;
         Código de Embed</a>
     </footer>
+  </div>
+
+  <!-- ══════════════════ EMBED MODAL ══════════════════ -->
+  <div id="embedModal" class="modal-overlay" onclick="closeEmbedModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">&lt;/&gt; Gerador de Código Embed</div>
+        <button class="modal-close" onclick="closeEmbedModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="embed-option-group">
+          <label class="embed-label">Modo de Exibição / Tamanho</label>
+          <div class="embed-radio-group">
+            <label class="embed-radio-card">
+              <input type="radio" name="embedLayout" value="standard" checked onchange="updateEmbedCode()">
+              <div class="radio-content">
+                <span class="radio-title">📦 Padrão (Caixa 800px)</span>
+                <span class="radio-desc">Ideal para blogs e postagens com largura fixa</span>
+              </div>
+            </label>
+            <label class="embed-radio-card">
+              <input type="radio" name="embedLayout" value="full" onchange="updateEmbedCode()">
+              <div class="radio-content">
+                <span class="radio-title">🖥️ Página Inteira / Tela Cheia</span>
+                <span class="radio-desc">Ocupa 100% da largura e altura disponível</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-checkbox-label">
+            <input type="checkbox" id="embedHideCreate" checked onchange="updateEmbedCode()">
+            <span>Ocultar aba "Criar Patch" (exibir somente "Aplicar Patch")</span>
+          </label>
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label" for="embedPresetsUrl">URL de Presets Personalizada (Opcional)</label>
+          <input type="text" id="embedPresetsUrl" class="embed-input" placeholder="https://exemplo.com/meus-presets.json" oninput="updateEmbedCode()">
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label" for="embedPatchUrl">URL do Patch pré-carregado (Opcional)</label>
+          <input type="text" id="embedPatchUrl" class="embed-input" placeholder="https://exemplo.com/meu-patch.gpatch" oninput="updateEmbedCode()">
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label">Código HTML Gerado</label>
+          <textarea id="embedCodeOutput" class="embed-code-box" readonly onclick="this.select()"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnCopyEmbed" class="modal-btn primary" onclick="copyEmbedCode()">📋 Copiar Código</button>
+        <button class="modal-btn secondary" onclick="closeEmbedModal()">Fechar</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -1309,25 +1596,47 @@
     // ═══════════════════════════════════════════════
     //  FILE LOADING
     // ═══════════════════════════════════════════════
-    function loadFile(key, input) {
+    async function loadFile(key, input) {
       const file = input.files[0];
       if (!file) return;
 
       if (key === 'applyPatch') {
-        // O patch .gpatch/.dubpatch é carregado inteiro (é pequeno)
-        const reader = new FileReader();
-        reader.onload = async e => {
-          const buffer = e.target.result;
-          state[key] = { buffer: buffer, name: file.name, size: file.size };
+        const isXDeltaName = !!file.name.match(/\.(xdelta|vcdiff)$/i);
+        const slice = await file.slice(0, 16).arrayBuffer();
+        const magic = new Uint8Array(slice);
+        const isXDelta = isXDeltaName || (magic[0] === 0xD6 && magic[1] === 0xC3 && magic[2] === 0xC4);
+
+        if (isXDelta) {
+          state[key] = { file: file, buffer: null, name: file.name, size: file.size, isXDelta: true };
           updateDropZone(key, file);
-
-          const meta = await extractPatchMeta(buffer);
+          const meta = {
+            game: file.name.replace(/\.(xdelta|vcdiff)$/i, '').replace(/_/g, ' '),
+            patchName: 'Patch xdelta3 (VCDIFF)',
+            author: 'Criador do mod',
+            language: '-',
+            type: 'xdelta3 / WebAssembly',
+            iso: 'Conforme especificado pelo autor',
+            version: 'xdelta3'
+          };
           showPatchInfo(meta);
-
           checkButtons();
           resetResult('apply');
-        };
-        reader.readAsArrayBuffer(file);
+        } else {
+          // O patch .gpatch/.dubpatch é carregado inteiro (é pequeno)
+          const reader = new FileReader();
+          reader.onload = async e => {
+            const buffer = e.target.result;
+            state[key] = { file: file, buffer: buffer, name: file.name, size: file.size, isXDelta: false };
+            updateDropZone(key, file);
+
+            const meta = await extractPatchMeta(buffer);
+            showPatchInfo(meta);
+
+            checkButtons();
+            resetResult('apply');
+          };
+          reader.readAsArrayBuffer(file);
+        }
       } else {
         // ISOs mantêm referência como File (sem ir pra RAM)
         state[key] = { file: file, name: file.name, size: file.size };
@@ -1343,7 +1652,7 @@
       const dz = document.getElementById(idMap[key]);
       dz.classList.add('file-loaded');
       dz.innerHTML = `
-    <input type="file" accept="${file.name.match(/\.(gpatch|dubpatch|zip)$/i) ? '.gpatch,.dubpatch,.zip' : '.iso,.bin,.img'}" onchange="loadFile('${key}',this)">
+    <input type="file" accept="${file.name.match(/\.(gpatch|dubpatch|zip|xdelta|vcdiff)$/i) ? '.gpatch,.dubpatch,.zip,.xdelta,.vcdiff' : '.iso,.bin,.img'}" onchange="loadFile('${key}',this)">
     <div class="dz-icon">✅</div>
     <div class="file-name">${fmtName(file.name)}</div>
     <div class="file-size">${fmtSize(file.size)}</div>
@@ -1364,9 +1673,26 @@
       document.getElementById(mode + 'Progress').classList.remove('visible');
     }
 
-    async function extractPatchMeta(buffer) {
+    async function extractPatchMeta(bufferOrFile) {
       try {
+        let buffer;
+        if (bufferOrFile instanceof File || bufferOrFile instanceof Blob) {
+          buffer = await bufferOrFile.slice(0, 65536).arrayBuffer();
+        } else {
+          buffer = bufferOrFile;
+        }
         const magic = new Uint8Array(buffer, 0, 4);
+        if (magic[0] === 0xD6 && magic[1] === 0xC3 && magic[2] === 0xC4) {
+          return {
+            game: (bufferOrFile.name || 'Jogo').replace(/\.(xdelta|vcdiff)$/i, '').replace(/_/g, ' '),
+            patchName: 'Patch xdelta3 (VCDIFF)',
+            author: 'Criador do mod',
+            language: '-',
+            type: 'xdelta3 / WebAssembly',
+            iso: '-',
+            version: 'xdelta3'
+          };
+        }
         const isGPBin = (magic[0] === 0x47 && magic[1] === 0x50 && magic[2] === 0x03);
         if (isGPBin) {
           const view = new DataView(buffer);
@@ -1550,16 +1876,107 @@
       checkButtons();
     }
 
-    function showEmbed() {
-      let baseUrl = window.location.href.split('?')[0];
-      const customUrl = prompt("Você quer usar uma lista de patches personalizada no embed?\nSe sim, cole a URL do seu próprio arquivo presets.json abaixo.\nSe quiser usar a lista padrão, deixe em branco e dê OK:");
+    // ═══════════════════════════════════════════════
+    //  EMBED & URL OPTIONS
+    // ═══════════════════════════════════════════════
+    function checkURLParams() {
+      const params = new URLSearchParams(location.search);
 
-      if (customUrl && customUrl.trim() !== '') {
-        baseUrl += '?presets=' + encodeURIComponent(customUrl.trim());
+      // Desativar botão "Criar Patch" se nocreate=1 ou hide_create=1
+      const hideCreate = params.get('nocreate') === '1' || params.get('hide_create') === '1' || params.get('nocreate') === 'true';
+      if (hideCreate) {
+        const btnCreate = document.getElementById('btnCreate');
+        if (btnCreate) btnCreate.style.display = 'none';
+        const modeToggle = document.querySelector('.mode-toggle');
+        if (modeToggle) modeToggle.style.display = 'none';
       }
 
-      const code = `<iframe src="${baseUrl}" width="100%" height="800" style="border:none; border-radius:12px; max-width:800px; margin:0 auto; display:block;"></iframe>`;
-      prompt("Copie o código abaixo para incorporar o GPatch no seu site:", code);
+      // Modo página inteira (full page)
+      const isFull = params.get('full') === '1' || params.get('full') === 'true';
+      if (isFull) {
+        document.body.classList.add('embed-full');
+      }
+
+      // Se estiver incorporado
+      const isEmbed = params.get('embed') === '1' || params.get('embed') === 'true';
+      if (isEmbed || window.self !== window.top) {
+        document.body.classList.add('is-embed');
+      }
+    }
+
+    function showEmbed() {
+      const modal = document.getElementById('embedModal');
+      if (modal) {
+        modal.classList.add('active');
+        updateEmbedCode();
+      }
+    }
+
+    function closeEmbedModal(e) {
+      if (!e || e.target === document.getElementById('embedModal') || (e.currentTarget && (e.currentTarget.classList.contains('modal-close') || e.currentTarget.classList.contains('secondary')))) {
+        document.getElementById('embedModal').classList.remove('active');
+      }
+    }
+
+    function updateEmbedCode() {
+      let baseUrl = window.location.href.split('?')[0];
+      const params = new URLSearchParams();
+
+      const layout = document.querySelector('input[name="embedLayout"]:checked')?.value || 'standard';
+      const hideCreate = document.getElementById('embedHideCreate')?.checked;
+      const presetsUrl = document.getElementById('embedPresetsUrl')?.value?.trim();
+      const patchUrl = document.getElementById('embedPatchUrl')?.value?.trim();
+
+      params.set('embed', '1');
+
+      if (hideCreate) {
+        params.set('nocreate', '1');
+      }
+
+      if (layout === 'full') {
+        params.set('full', '1');
+      }
+
+      if (presetsUrl) {
+        params.set('presets', presetsUrl);
+      }
+
+      if (patchUrl) {
+        params.set('patch', patchUrl);
+      }
+
+      const finalUrl = `${baseUrl}?${params.toString()}`;
+
+      let code = '';
+      if (layout === 'full') {
+        code = `<iframe src="${finalUrl}" width="100%" height="100%" style="border:none; width:100%; height:100vh; min-height:800px; display:block;"></iframe>`;
+      } else {
+        code = `<iframe src="${finalUrl}" width="100%" height="800" style="border:none; border-radius:12px; max-width:800px; margin:0 auto; display:block;"></iframe>`;
+      }
+
+      const output = document.getElementById('embedCodeOutput');
+      if (output) output.value = code;
+    }
+
+    async function copyEmbedCode() {
+      const output = document.getElementById('embedCodeOutput');
+      const btn = document.getElementById('btnCopyEmbed');
+      if (!output) return;
+
+      try {
+        await navigator.clipboard.writeText(output.value);
+        const originalText = btn.textContent;
+        btn.textContent = '✅ Copiado!';
+        btn.style.background = 'linear-gradient(135deg, #005533, #00aa55)';
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.style.background = '';
+        }, 2000);
+      } catch (err) {
+        output.select();
+        document.execCommand('copy');
+        alert('Código copiado!');
+      }
     }
 
     // ═══════════════════════════════════════════════
@@ -1579,11 +1996,125 @@
       };
 
       const origFile = state.applyISO.file;
-      const patchBuf = state.applyPatch.buffer;
+      const patchObj = state.applyPatch;
+      const patchFile = patchObj.file;
+      let patchBuf = patchObj.buffer;
       const resultEl = document.getElementById('applyResult');
 
       try {
-        const magic = new Uint8Array(patchBuf, 0, 4);
+        let isXDelta = !!patchObj.isXDelta;
+        let magic = null;
+        if (patchBuf && patchBuf.byteLength >= 4) {
+          magic = new Uint8Array(patchBuf, 0, 4);
+          if (magic[0] === 0xD6 && magic[1] === 0xC3 && magic[2] === 0xC4) isXDelta = true;
+        } else if (patchFile) {
+          const mSlice = await patchFile.slice(0, 4).arrayBuffer();
+          magic = new Uint8Array(mSlice);
+          if (magic[0] === 0xD6 && magic[1] === 0xC3 && magic[2] === 0xC4) isXDelta = true;
+        }
+
+        if (isXDelta) {
+          await log('Patch xdelta3 (VCDIFF) detectado...', 5);
+          await log('Carregando motor WebAssembly (xdelta3)...', 8);
+
+          let wasmBinary = null;
+          try {
+            const wasmRes = await fetch('xdelta3.wasm');
+            if (wasmRes.ok) wasmBinary = await wasmRes.arrayBuffer();
+          } catch (e) {
+            console.warn('Fetch xdelta3.wasm:', e);
+          }
+
+          await log('Iniciando decodificação em segundo plano...', 12);
+          const actualPatch = patchFile || new Blob([patchBuf]);
+          const outputChunks = [];
+
+          await new Promise((resolve, reject) => {
+            let worker;
+            try {
+              worker = new Worker('xdelta3.worker.js', { type: 'module' });
+            } catch (err) {
+              reject(new Error('Falha ao instanciar Web Worker: ' + err.message));
+              return;
+            }
+
+            worker.onmessage = e => {
+              const data = e.data;
+              if (!data) return;
+
+              if (data.type === 'progress') {
+                const pct = 12 + Math.round(data.pct * 0.82); // 12% a 94%
+                setProgress('applyFill', 'applyPct', 'applyLog', pct,
+                  `Decodificando xdelta3: ${fmtSize(data.current)} / ${fmtSize(data.total)} (${data.pct}%)...`);
+              } else if (data.type === 'chunk') {
+                outputChunks.push(data.bytes);
+              } else if (data.type === 'done') {
+                worker.terminate();
+                if (data.error) {
+                  reject(new Error(data.errorMessage || 'Erro desconhecido ao aplicar xdelta3'));
+                } else {
+                  resolve();
+                }
+              }
+            };
+
+            worker.onerror = err => {
+              worker.terminate();
+              reject(new Error('Erro no worker xdelta3: ' + (err.message || 'Falha')));
+            };
+
+            const postData = {
+              command: 'start',
+              sourceFile: origFile,
+              patchFile: actualPatch,
+              disableChecksum: false,
+              wasmBinary: wasmBinary
+            };
+
+            if (wasmBinary) {
+              worker.postMessage(postData, [wasmBinary]);
+            } else {
+              worker.postMessage(postData);
+            }
+          });
+
+          await log('Montando ISO final...', 96);
+          await sleep(50);
+
+          const blob = new Blob(outputChunks, { type: 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
+          const dlName = `${origName}_patched.iso`;
+
+          await log('Concluído!', 100);
+
+          resultEl.className = 'result-card success visible';
+          resultEl.innerHTML = `
+            <div class="result-icon">🎉</div>
+            <div class="result-title">Patch xdelta3 Aplicado!</div>
+            <div class="result-stats">
+              <div class="stat-badge"><span class="stat-val">xdelta3</span><span class="stat-label">Motor Wasm</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(blob.size)}</span><span class="stat-label">ISO Final</span></div>
+            </div>
+            <div class="result-info">
+              <strong>${origName}</strong><br>
+              Patch padrão de mercado .xdelta aplicado com sucesso via WebAssembly.<br>
+              ISO pronta para uso no emulador ou console PS2.
+            </div>
+            <a class="dl-btn dl-btn-iso" href="${url}" download="${dlName}">
+              ⬇️ Baixar ${dlName}
+            </a>
+            <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
+          `;
+          return;
+        }
+
+        if (!patchBuf && patchFile) {
+          patchBuf = await patchFile.arrayBuffer();
+        }
+        if (!magic) {
+          magic = new Uint8Array(patchBuf, 0, 4);
+        }
         const isGPBin = (magic[0] === 0x47 && magic[1] === 0x50 && magic[2] === 0x03);
 
         if (isGPBin) {
@@ -2498,6 +3029,7 @@
     // ═══════════════════════════════════════════════
     //  INIT
     // ═══════════════════════════════════════════════
+    checkURLParams();
     loadPresetsFromJSON();
     checkURLPatch();
   </script>
