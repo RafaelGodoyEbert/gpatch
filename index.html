@@ -3272,9 +3272,17 @@
       const gallery = document.getElementById('presetsGallery');
       try {
         const params = new URLSearchParams(location.search);
-        const presetsUrl = params.get('presets') || 'https://huggingface.co/datasets/RafaG/godoy/raw/main/presets.json';
+        let presetsUrl = params.get('presets') || 'https://huggingface.co/datasets/RafaG/godoy/raw/main/presets.json';
+        if (presetsUrl.includes('huggingface.co/') && presetsUrl.includes('/blob/')) {
+          presetsUrl = presetsUrl.replace('/blob/', '/raw/');
+        }
+        if (presetsUrl.includes('github.com/') && presetsUrl.includes('/blob/')) {
+          presetsUrl = presetsUrl.replace('github.com/', 'raw.githubusercontent.com/').replace('/blob/', '/');
+        }
         const res = await fetch(presetsUrl);
-        const presets = await res.json();
+        const text = await res.text();
+        const cleanJson = text.replace(/,\s*([\]}])/g, (m, p1) => p1);
+        const presets = JSON.parse(cleanJson);
         gallery.innerHTML = '';
         if (!presets.length) {
           gallery.innerHTML = '<div style="font-size:10px;color:var(--text2);padding:12px">Nenhum patch disponível no momento.</div>';
