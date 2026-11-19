@@ -1537,11 +1537,115 @@
         }
       }
 
+      findFile(path) {
+        if (this.files[path]) return this.files[path];
+        const lower = path.toLowerCase();
+        for (const k in this.files) {
+          if (k.toLowerCase() === lower) return this.files[k];
+        }
+        return null;
+      }
+
       async parse() {
         const root = await this.parsePVD();
         await this.scanDir(root.lba, root.size, '');
         return this.files;
       }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  XDVDFS READER (XBOX)
+    // ═══════════════════════════════════════════════
+    class XDVDFSReader {
+      constructor(file) {
+        this.file = file;
+        this.SECTOR = 2048;
+        this.base = 0;
+        this.files = {}; // path -> { lba, size, dirLBA, dirPos, isXdvdfs: true }
+        this.dirSectors = new Map(); // sectorLBA -> { data: Uint8Array, size }
+        this.isXdvdfs = true;
+      }
+
+      async readSector(lba, count = 1) {
+        const start = this.base + lba * this.SECTOR;
+        const end = start + count * this.SECTOR;
+        const slice = this.file.slice(start, end);
+        return new Uint8Array(await slice.arrayBuffer());
+      }
+
+      findFile(path) {
+        if (this.files[path]) return this.files[path];
+        const lower = path.toLowerCase();
+        for (const k in this.files) {
+          if (k.toLowerCase() === lower) return this.files[k];
+        }
+        return null;
+      }
+
+      async parse() {
+        const descData = await this.readSector(32, 1);
+        const magic = String.fromCharCode(...descData.slice(0, 20));
+        if (magic !== 'MICROSOFT*XBOX*MEDIA') {
+          throw new Error('Não é uma imagem XDVDFS de Xbox válida.');
+        }
+        const view = new DataView(descData.buffer);
+        const rootSector = view.getUint32(0x14, true);
+        const rootSize = view.getUint32(0x18, true);
+        await this.scanDir(rootSector, rootSize, '');
+        return this.files;
+      }
+
+      async scanDir(lba, size, path) {
+        const numSectors = Math.ceil(size / this.SECTOR);
+        const data = await this.readSector(lba, numSectors);
+        this.dirSectors.set(lba, { data, size });
+
+        for (let base = 0; base < data.length; base += this.SECTOR) {
+          const chunk = data.subarray(base, base + this.SECTOR);
+          const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+          let off = 0;
+          while (off + 14 <= chunk.length) {
+            const l = view.getUint16(off, true);
+            const r = view.getUint16(off + 2, true);
+            const sec = view.getUint32(off + 4, true);
+            const sz = view.getUint32(off + 8, true);
+            const attr = view.getUint8(off + 12);
+            const nlen = view.getUint8(off + 13);
+            if ((l === 0xFFFF && r === 0xFFFF) || nlen === 0) break;
+            if (off + 14 + nlen > chunk.length) break;
+            const name = String.fromCharCode(...chunk.slice(off + 14, off + 14 + nlen));
+            const full = path ? `${path}/${name}` : name;
+            const isDir = Boolean(attr & 0x10);
+            if (isDir) {
+              await this.scanDir(sec, sz, full);
+            } else {
+              this.files[full] = {
+                lba: sec,
+                size: sz,
+                dirLBA: lba + Math.floor(base / this.SECTOR),
+                dirPos: off,
+                isXdvdfs: true
+              };
+            }
+            off = (off + 14 + nlen + 3) & ~3;
+          }
+        }
+      }
+    }
+
+    async function createIsoReader(file) {
+      if (file.size >= 33 * 2048) {
+        const sec32 = await file.slice(32 * 2048, 32 * 2048 + 20).arrayBuffer();
+        const magic = String.fromCharCode(...new Uint8Array(sec32));
+        if (magic === 'MICROSOFT*XBOX*MEDIA') {
+          const xReader = new XDVDFSReader(file);
+          await xReader.parse();
+          return xReader;
+        }
+      }
+      const isoReader = new ISO9660Reader(file);
+      await isoReader.parse();
+      return isoReader;
     }
 
     // ═══════════════════════════════════════════════
@@ -2305,8 +2409,7 @@
         }
 
         await log('Analisando estrutura ISO...', 20);
-        const iso = new ISO9660Reader(origFile);
-        await iso.parse();
+        const iso = await createIsoReader(origFile);
 
         const changedFiles = meta.changedFiles;
         await log(`${changedFiles.length} arquivo(s) para aplicar...`, 25);
@@ -2318,7 +2421,7 @@
           const pct = 25 + (i / changedFiles.length) * 20;
           await log(`Lendo: ${fi.path}`, pct);
           const newData = await zip.file(`files/${fi.path}`).async('uint8array');
-          const origInfo = iso.files[fi.path];
+          const origInfo = iso.findFile ? iso.findFile(fi.path) : iso.files[fi.path];
           if (!origInfo) {
             await log(`Aviso: ${fi.path} não encontrado na ISO original`, pct, 'warn');
             continue;
@@ -2364,10 +2467,15 @@
           const dirInfo = iso.dirSectors.get(p.origInfo.dirLBA);
           const view = new DataView(dirInfo.data.buffer, dirInfo.data.byteOffset, dirInfo.data.byteLength);
           const pos = p.origInfo.dirPos;
-          view.setUint32(pos + 2, newLBA, true);
-          view.setUint32(pos + 6, newLBA, false);
-          view.setUint32(pos + 10, p.newData.length, true);
-          view.setUint32(pos + 14, p.newData.length, false);
+          if (p.origInfo.isXdvdfs) {
+            view.setUint32(pos + 4, newLBA, true);
+            view.setUint32(pos + 8, p.newData.length, true);
+          } else {
+            view.setUint32(pos + 2, newLBA, true);
+            view.setUint32(pos + 6, newLBA, false);
+            view.setUint32(pos + 10, p.newData.length, true);
+            view.setUint32(pos + 14, p.newData.length, false);
+          }
         }
 
         // Write modified dir sectors to sectorOverrides
@@ -2490,21 +2598,22 @@
         if (mode === 'auto') {
           await log('Modo automático: Analisando formato do arquivo...', 2);
           try {
-            const tempIso = new ISO9660Reader(origFile);
-            await tempIso.parse();
+            const tempIso = await createIsoReader(origFile);
             let hasLargeFiles = false;
-            for (const path in tempIso.files) {
+            const paths = Object.keys(tempIso.files);
+            for (const path of paths) {
               if (tempIso.files[path].size > 1.5 * 1024 * 1024 * 1024) { // 1.5GB
                 hasLargeFiles = true;
                 break;
               }
             }
-            if (hasLargeFiles) {
+            if (hasLargeFiles || paths.length === 0) {
               mode = 'binary';
-              await log('Modo Auto: Arquivo grande detectado. Usando Modo Binário.', 3);
+              await log('Modo Auto: Arquivo grande ou não-estruturado. Usando Modo Binário.', 3);
             } else {
               mode = 'file';
-              await log('Modo Auto: Arquivos menores detectados. Usando Modo Arquivo.', 3);
+              const fmtName = tempIso.isXdvdfs ? 'Xbox (XDVDFS)' : 'ISO 9660';
+              await log(`Modo Auto: Formato ${fmtName} detectado (${paths.length} arquivos). Usando Modo Arquivo.`, 3);
             }
           } catch (e) {
             mode = 'binary';
@@ -2691,23 +2800,24 @@
 
         if (mode === 'file') {
           await log('Analisando estrutura da ISO original...', 5);
-          const origIso = new ISO9660Reader(origFile);
-          await origIso.parse();
+          const origIso = await createIsoReader(origFile);
 
           await log('Analisando estrutura da ISO modificada...', 10);
-          const modIso = new ISO9660Reader(modFile);
-          await modIso.parse();
+          const modIso = await createIsoReader(modFile);
 
           const changedFiles = [];
           const zip = new JSZip();
           const filesFolder = zip.folder("files");
 
           const paths = Object.keys(modIso.files);
+          if (paths.length === 0) {
+            throw new Error('Nenhum arquivo encontrado no índice do sistema de arquivos da ISO.');
+          }
 
           for (let i = 0; i < paths.length; i++) {
             const path = paths[i];
             const mFile = modIso.files[path];
-            const oFile = origIso.files[path];
+            const oFile = origIso.findFile ? origIso.findFile(path) : origIso.files[path];
 
             const pct = 15 + (i / paths.length) * 45;
             if (i % 10 === 0) {

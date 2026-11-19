@@ -1,0 +1,3208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GPatch — PS2 Patcher</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Bebas+Neue&display=swap"
+    rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root {
+      --bg: #04060f;
+      --bg2: #080c1a;
+      --bg3: #0d1225;
+      --blue: #0077ff;
+      --cyan: #00d4ff;
+      --green: #00ff88;
+      --red: #ff3355;
+      --yellow: #ffcc00;
+      --text: #c8d4f0;
+      --text2: #7080a0;
+      --border: rgba(0, 180, 255, 0.15);
+      --glow: rgba(0, 180, 255, 0.08);
+      --radius: 12px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* scanlines */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0, 0, 0, 0.08) 3px, rgba(0, 0, 0, 0.08) 4px);
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* background glow blobs */
+    .bg-glow {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .bg-glow-1 {
+      width: 400px;
+      height: 400px;
+      background: rgba(0, 100, 255, 0.06);
+      top: -100px;
+      left: -100px;
+    }
+
+    .bg-glow-2 {
+      width: 300px;
+      height: 300px;
+      background: rgba(0, 200, 255, 0.04);
+      bottom: -50px;
+      right: -50px;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px 16px 60px;
+    }
+
+    /* ── HEADER ── */
+    header {
+      text-align: center;
+      padding: 28px 0 24px;
+    }
+
+    .logo {
+      font-family: 'Bebas Neue', cursive;
+      font-size: clamp(48px, 12vw, 72px);
+      letter-spacing: 6px;
+      background: linear-gradient(135deg, #fff 0%, var(--cyan) 50%, var(--blue) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 20px rgba(0, 200, 255, 0.4));
+      line-height: 1;
+    }
+
+    .logo-sub {
+      font-size: 10px;
+      letter-spacing: 4px;
+      color: var(--text2);
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .version-badge {
+      display: inline-flex;
+      gap: 12px;
+      background: rgba(0, 180, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 10px;
+      letter-spacing: 1px;
+      padding: 6px 14px;
+      margin-top: 10px;
+    }
+
+    .version-badge a {
+      color: var(--cyan);
+      text-decoration: none;
+      font-weight: 700;
+      transition: color 0.2s;
+    }
+
+    .version-badge a:hover {
+      color: #fff;
+    }
+
+    /* ── PRESETS ── */
+    .presets-section {
+      margin-bottom: 24px;
+    }
+
+    .presets-title {
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text2);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .presets-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .presets-gallery {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      scroll-snap-type: x mandatory;
+    }
+
+    .presets-gallery::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .presets-gallery::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 2px;
+    }
+
+    .presets-gallery::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    .preset-card {
+      flex: 0 0 100px;
+      scroll-snap-align: start;
+      cursor: pointer;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: all 0.2s;
+    }
+
+    .preset-card:hover,
+    .preset-card:active {
+      border-color: var(--cyan);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px var(--glow);
+    }
+
+    .preset-img {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .preset-info {
+      padding: 8px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex: 1;
+    }
+
+    .preset-name {
+      font-size: 11px;
+      text-align: center;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .preset-tags {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .preset-tag {
+      font-size: 8px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .tag-dub {
+      background: rgba(0, 255, 136, 0.1);
+      color: var(--green);
+      border: 1px solid rgba(0, 255, 136, 0.2);
+    }
+
+    .tag-sub {
+      background: rgba(0, 180, 255, 0.1);
+      color: var(--cyan);
+      border: 1px solid rgba(0, 180, 255, 0.2);
+    }
+
+    .tag-iso {
+      background: rgba(255, 204, 0, 0.1);
+      color: var(--yellow);
+      border: 1px solid rgba(255, 204, 0, 0.2);
+    }
+
+    .tag-size {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text2);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* ── MODE TOGGLE ── */
+    .mode-toggle {
+      display: flex;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px;
+      margin-bottom: 24px;
+      gap: 4px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 12px 8px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      font-weight: 700;
+      transition: all 0.2s;
+      background: transparent;
+      color: var(--text2);
+    }
+
+    .mode-btn.active {
+      background: linear-gradient(135deg, rgba(0, 100, 255, 0.3), rgba(0, 200, 255, 0.2));
+      color: var(--cyan);
+      border: 1px solid rgba(0, 200, 255, 0.3);
+      box-shadow: 0 0 16px rgba(0, 180, 255, 0.2) inset;
+    }
+
+    /* ── PANELS ── */
+    .panel {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    /* ── STEP CARD ── */
+    .step-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .step-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      opacity: 0.4;
+    }
+
+    .step-label {
+      font-size: 9px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .step-label .step-num {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(0, 120, 255, 0.2);
+      border: 1px solid rgba(0, 120, 255, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      color: var(--cyan);
+      flex-shrink: 0;
+    }
+
+    .step-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .step-desc {
+      font-size: 10px;
+      color: var(--text2);
+      margin-bottom: 12px;
+      line-height: 1.6;
+    }
+
+    /* ── DROP ZONE ── */
+    .drop-zone {
+      border: 2px dashed rgba(0, 180, 255, 0.25);
+      border-radius: 10px;
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(0, 100, 255, 0.03);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .drop-zone:active,
+    .drop-zone.drag-over {
+      border-color: var(--cyan);
+      background: rgba(0, 180, 255, 0.08);
+      box-shadow: 0 0 20px rgba(0, 180, 255, 0.1) inset;
+    }
+
+    .drop-zone input[type=file] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .dz-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .dz-text {
+      font-size: 11px;
+      color: var(--text2);
+      line-height: 1.5;
+    }
+
+    .dz-text strong {
+      color: var(--cyan);
+    }
+
+    .dz-tag {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: var(--text2);
+      margin-top: 4px;
+    }
+
+    .file-loaded {
+      border-style: solid;
+      border-color: rgba(0, 255, 136, 0.3);
+      background: rgba(0, 255, 136, 0.04);
+    }
+
+    .file-loaded .dz-icon {
+      filter: none;
+    }
+
+    .file-name {
+      font-size: 11px;
+      color: var(--green);
+      word-break: break-all;
+      margin-top: 4px;
+      font-weight: 700;
+    }
+
+    .file-size {
+      font-size: 9px;
+      color: var(--text2);
+      margin-top: 2px;
+    }
+
+    /* ── INLINE FIELDS ── */
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .field-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .field-row .field {
+      flex: 1;
+    }
+
+    .field label {
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text2);
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .field input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .field input:focus {
+      border-color: var(--cyan);
+    }
+
+    /* ── ACTION BUTTON ── */
+    .action-btn {
+      width: 100%;
+      padding: 18px;
+      border: none;
+      border-radius: var(--radius);
+      font-family: 'Bebas Neue', cursive;
+      font-size: 22px;
+      letter-spacing: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .action-btn.apply-btn {
+      background: linear-gradient(135deg, #0055cc, #0099ff);
+      color: #fff;
+      box-shadow: 0 4px 24px rgba(0, 120, 255, 0.3);
+    }
+
+    .action-btn.create-btn {
+      background: linear-gradient(135deg, #005533, #00aa55);
+      color: #fff;
+      box-shadow: 0 4px 24px rgba(0, 180, 80, 0.3);
+    }
+
+    .action-btn:active {
+      transform: scale(0.98);
+    }
+
+    .action-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .action-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.08) 50%, transparent 100%);
+      transform: translateX(-100%);
+      transition: transform 0.4s;
+    }
+
+    .action-btn:not(:disabled):active::after {
+      transform: translateX(100%);
+    }
+
+    /* ── PROGRESS ── */
+    .progress-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .progress-card.visible {
+      display: block;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .progress-title {
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text2);
+    }
+
+    .progress-pct {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cyan);
+    }
+
+    .progress-track {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+      box-shadow: 0 0 8px var(--cyan);
+      width: 0%;
+    }
+
+    .progress-log {
+      font-size: 9px;
+      color: var(--text2);
+      min-height: 16px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .progress-log .log-entry {
+      color: var(--cyan);
+    }
+
+    .progress-log .log-warn {
+      color: var(--yellow);
+    }
+
+    .progress-log .log-err {
+      color: var(--red);
+    }
+
+    /* ── RESULT ── */
+    .result-card {
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-top: 12px;
+      display: none;
+      text-align: center;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .result-card.visible {
+      display: block;
+    }
+
+    .result-card.success {
+      background: rgba(0, 255, 136, 0.06);
+      border: 1px solid rgba(0, 255, 136, 0.25);
+    }
+
+    .result-card.error {
+      background: rgba(255, 50, 80, 0.06);
+      border: 1px solid rgba(255, 50, 80, 0.25);
+    }
+
+    .result-icon {
+      font-size: 40px;
+      margin-bottom: 10px;
+    }
+
+    .result-title {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 22px;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+
+    .result-card.success .result-title {
+      color: var(--green);
+    }
+
+    .result-card.error .result-title {
+      color: var(--red);
+    }
+
+    .result-info {
+      font-size: 10px;
+      color: var(--text2);
+      margin-bottom: 14px;
+      line-height: 1.7;
+    }
+
+    .result-stats {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .stat-badge {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 6px 12px;
+      text-align: center;
+    }
+
+    .stat-val {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--cyan);
+      display: block;
+    }
+
+    .stat-label {
+      font-size: 8px;
+      letter-spacing: 1px;
+      color: var(--text2);
+      text-transform: uppercase;
+    }
+
+    .dl-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      font-size: 13px;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .dl-btn-iso {
+      background: linear-gradient(135deg, #0055cc, #0099ff);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(0, 120, 255, 0.3);
+    }
+
+    .dl-btn-patch {
+      background: linear-gradient(135deg, #005533, #00aa55);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(0, 180, 80, 0.3);
+    }
+
+    .dl-btn:active {
+      transform: scale(0.97);
+    }
+
+    .retry-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text2);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      cursor: pointer;
+      margin-top: 10px;
+      display: block;
+      width: 100%;
+      transition: all 0.2s;
+    }
+
+    .retry-btn:active {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    /* ── PRE-LOADED PATCH BANNER ── */
+    .preload-banner {
+      background: linear-gradient(135deg, rgba(0, 120, 255, 0.15), rgba(0, 200, 255, 0.08));
+      border: 1px solid rgba(0, 200, 255, 0.3);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 12px;
+      display: none;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .preload-banner.visible {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .preload-banner .pb-icon {
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    .preload-banner .pb-text {
+      flex: 1;
+    }
+
+    .preload-banner .pb-label {
+      font-size: 8px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--cyan);
+    }
+
+    .preload-banner .pb-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    .preload-banner .pb-clear {
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    /* ── WARN CARD ── */
+    .warn-card {
+      background: rgba(255, 180, 0, 0.05);
+      border: 1px solid rgba(255, 180, 0, 0.2);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      font-size: 10px;
+      color: #c0a050;
+      line-height: 1.6;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .warn-card .wi {
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    /* ── PATCH INFO CARD ── */
+    .patch-info-card {
+      background: rgba(0, 180, 255, 0.04);
+      border: 1px solid rgba(0, 180, 255, 0.15);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      display: none;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .patch-info-card.visible {
+      display: block;
+    }
+
+    .pi-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(0, 180, 255, 0.1);
+      padding-bottom: 10px;
+    }
+
+    .pi-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cyan);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pi-tag {
+      background: rgba(0, 180, 255, 0.1);
+      color: var(--cyan);
+      font-size: 9px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    .pi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .pi-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .pi-label {
+      font-size: 8px;
+      text-transform: uppercase;
+      color: var(--text2);
+      letter-spacing: 1px;
+    }
+
+    .pi-value {
+      font-size: 11px;
+      color: #fff;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pi-value.empty {
+      color: var(--text2);
+      font-weight: 400;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      text-align: center;
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: var(--text2);
+      padding-top: 20px;
+      text-transform: uppercase;
+      opacity: 0.5;
+    }
+
+    /* animations */
+    @keyframes pulse-border {
+
+      0%,
+      100% {
+        border-color: rgba(0, 180, 255, 0.15);
+      }
+
+      50% {
+        border-color: rgba(0, 180, 255, 0.4);
+      }
+    }
+
+    .processing .step-card {
+      animation: pulse-border 1.5s infinite;
+    }
+
+    .shimmer {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .shimmer::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(0, 200, 255, 0.06) 50%, transparent 100%);
+      transform: translateX(-100%);
+      animation: shimmer-anim 2s infinite;
+    }
+
+    @keyframes shimmer-anim {
+      100% {
+        transform: translateX(100%);
+      }
+    }
+
+    /* ── MODAL EMBED & FULL PAGE EMBED ── */
+    body.embed-full .container {
+      max-width: 100%;
+      padding: 16px;
+    }
+
+    body.is-embed footer .embed-link {
+      display: none;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 6, 15, 0.88);
+      backdrop-filter: blur(8px);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8), 0 0 20px var(--glow);
+      display: flex;
+      flex-direction: column;
+      animation: modalSlide 0.25s ease;
+    }
+
+    @keyframes modalSlide {
+      from { transform: translateY(16px) scale(0.97); }
+      to { transform: translateY(0) scale(1); }
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 22px;
+      letter-spacing: 2px;
+      color: var(--cyan);
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+
+    .modal-close:hover {
+      color: #fff;
+    }
+
+    .modal-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .embed-option-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .embed-label {
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text2);
+    }
+
+    .embed-radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .embed-radio-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .embed-radio-card:hover {
+      border-color: var(--cyan);
+      background: rgba(0, 212, 255, 0.04);
+    }
+
+    .embed-radio-card input[type="radio"] {
+      margin-top: 3px;
+      accent-color: var(--cyan);
+    }
+
+    .radio-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .radio-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .radio-desc {
+      font-size: 10px;
+      color: var(--text2);
+    }
+
+    .embed-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    .embed-checkbox-label input[type="checkbox"] {
+      accent-color: var(--cyan);
+      width: 16px;
+      height: 16px;
+    }
+
+    .embed-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .embed-input:focus {
+      border-color: var(--cyan);
+    }
+
+    .embed-code-box {
+      width: 100%;
+      height: 90px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--cyan);
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      resize: none;
+      outline: none;
+    }
+
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .modal-btn {
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .modal-btn.primary {
+      background: linear-gradient(135deg, #0055cc, #0099ff);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(0, 120, 255, 0.3);
+    }
+
+    .modal-btn.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text2);
+    }
+
+    .modal-btn:active {
+      transform: scale(0.97);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <div class="container">
+    <header>
+      <div class="logo">GPatch</div>
+      <div class="logo-sub">PS2 gPatcher</div>
+      <div class="version-badge">
+        <a href="https://www.youtube.com/@godoyy" target="_blank">📺 @godoyy</a>
+        <a href="https://github.com/RafaelGodoyEbert/gpatch" target="_blank">💻 GitHub</a>
+      </div>
+    </header>
+
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btnApply" onclick="setMode('apply')">📥 Aplicar Patch</button>
+      <button class="mode-btn" id="btnCreate" onclick="setMode('create')">🔧 Criar Patch</button>
+    </div>
+
+    <!-- ══════════════════ APPLY PANEL ══════════════════ -->
+    <div id="panelApply" class="panel active">
+
+      <div id="preloadBanner" class="preload-banner">
+        <div class="pb-icon">🎮</div>
+        <div class="pb-text">
+          <div class="pb-label">Patch pré-carregado</div>
+          <div class="pb-name" id="preloadName">—</div>
+        </div>
+        <button class="pb-clear" onclick="clearPreload()" title="Remover">✕</button>
+      </div>
+
+      <div class="presets-section">
+        <div class="presets-title">Patches Prontos</div>
+        <div class="presets-gallery" id="presetsGallery">
+          <div class="preset-card shimmer" style="pointer-events:none;opacity:0.4">
+            <div style="width:100%;height:140px;background:var(--bg3)"></div>
+            <div class="preset-name">Carregando…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="warn-card">
+        <span class="wi">💾</span>
+        <span>Seus arquivos <strong>nunca saem do seu celular.</strong> Todo o processamento ocorre localmente no
+          navegador.</span>
+      </div>
+
+      <div class="step-card">
+        <div class="step-label"><span class="step-num">1</span> Arquivo ISO</div>
+        <div class="step-title">ISO Original do Jogo</div>
+        <div class="step-desc">Selecione a ISO original (sem patches). O hash será verificado automaticamente.</div>
+        <div class="drop-zone" id="dzApplyISO">
+          <input type="file" accept=".iso,.bin,.img" onchange="loadFile('applyISO',this)">
+          <div class="dz-icon">💿</div>
+          <div class="dz-text"><strong>Toque para selecionar</strong><br>ou arraste o arquivo aqui</div>
+          <div class="dz-tag">.ISO · .BIN · .IMG</div>
+        </div>
+      </div>
+
+      <div class="step-card" id="applyPatchStep">
+        <div class="step-label"><span class="step-num">2</span> Arquivo de Patch</div>
+        <div class="step-title">Arquivo de Patch (.gpatch ou .xdelta)</div>
+        <div class="step-desc">Selecione o arquivo de patch (.gpatch da dublagem ou o padrão de mercado .xdelta).</div>
+        <div class="drop-zone" id="dzApplyPatch">
+          <input type="file" accept=".gpatch,.dubpatch,.zip,.xdelta,.vcdiff" onchange="loadFile('applyPatch',this)">
+          <div class="dz-icon">📦</div>
+          <div class="dz-text"><strong>Toque para selecionar</strong><br>ou arraste o arquivo aqui</div>
+          <div class="dz-tag">.GPATCH · .XDELTA · .ZIP</div>
+        </div>
+      </div>
+
+      <div class="patch-info-card" id="patchInfoCard">
+        <div class="pi-header">
+          <div class="pi-title">ℹ️ Informações do Patch</div>
+          <div class="pi-tag" id="piVersion">v1.0</div>
+        </div>
+        <div class="pi-grid">
+          <div class="pi-item"><span class="pi-label">Jogo</span><span class="pi-value" id="piGame">-</span></div>
+          <div class="pi-item"><span class="pi-label">Patch</span><span class="pi-value" id="piPatch">-</span></div>
+          <div class="pi-item"><span class="pi-label">Autor</span><span class="pi-value" id="piAuthor">-</span></div>
+          <div class="pi-item"><span class="pi-label">Idioma</span><span class="pi-value" id="piLang">-</span></div>
+          <div class="pi-item"><span class="pi-label">Tipo</span><span class="pi-value" id="piType">-</span></div>
+          <div class="pi-item"><span class="pi-label">ISO Recomendada</span><span class="pi-value" id="piIso">-</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="action-btn apply-btn" id="btnRunApply" onclick="runApply()" disabled>
+        ▶ Aplicar Patch
+      </button>
+
+      <div class="progress-card" id="applyProgress">
+        <div class="progress-header">
+          <span class="progress-title">Processando...</span>
+          <span class="progress-pct" id="applyPct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="applyFill"></div>
+        </div>
+        <div class="progress-log" id="applyLog"></div>
+      </div>
+
+      <div class="result-card" id="applyResult"></div>
+    </div>
+
+    <!-- ══════════════════ CREATE PANEL ══════════════════ -->
+    <div id="panelCreate" class="panel">
+
+      <div class="warn-card">
+        <span class="wi">⚠️</span>
+        <span>Modo criador: compare duas ISOs e gere um <strong>.gpatch</strong> com apenas os arquivos modificados
+          (áudio, vídeo, texto). Ideal para distribuir dublagens sem redistribuir o jogo.</span>
+      </div>
+
+      <div class="step-card">
+        <div class="step-label"><span class="step-num">1</span> ISO Original</div>
+        <div class="step-title">ISO Original (sem modificações)</div>
+        <div class="step-desc">A ISO limpa do jogo, usada como referência. O hash dela ficará gravado no patch.</div>
+        <div class="drop-zone" id="dzCreateOrig">
+          <input type="file" accept=".iso,.bin,.img" onchange="loadFile('createOrig',this)">
+          <div class="dz-icon">💿</div>
+          <div class="dz-text"><strong>Toque para selecionar</strong><br>ISO original do jogo</div>
+          <div class="dz-tag">.ISO · .BIN · .IMG</div>
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-label"><span class="step-num">2</span> ISO Modificada</div>
+        <div class="step-title">ISO com a Dublagem Aplicada</div>
+        <div class="step-desc">A ISO com todos os arquivos de áudio/vídeo substituídos pela dublagem.</div>
+        <div class="drop-zone" id="dzCreateMod">
+          <input type="file" accept=".iso,.bin,.img" onchange="loadFile('createMod',this)">
+          <div class="dz-icon">🎙️</div>
+          <div class="dz-text"><strong>Toque para selecionar</strong><br>ISO com dublagem</div>
+          <div class="dz-tag">.ISO · .BIN · .IMG</div>
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-label"><span class="step-num">⚙</span> Modo de Criação</div>
+        <div class="step-title">Método de Comparação</div>
+        <div class="step-desc">Escolha como o patch será gerado.</div>
+        <div class="mode-toggle" style="margin:0">
+          <button class="mode-btn active" id="btnModeAuto" onclick="setCreateMode('auto')">🤖 Auto</button>
+          <button class="mode-btn" id="btnModeXdelta" onclick="setCreateMode('xdelta')">🔺 xdelta3</button>
+          <button class="mode-btn" id="btnModeBin" onclick="setCreateMode('binary')">⚡ Binário</button>
+          <button class="mode-btn" id="btnModeFile" onclick="setCreateMode('file')">📁 Arquivo</button>
+        </div>
+        <div id="createModeDesc" style="font-size:10px;color:var(--text2);margin-top:8px;line-height:1.6">
+          <strong>Modo automático:</strong> escolhe o melhor método (Binário para arquivos grandes, Arquivo para
+          soltos).
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-label"><span class="step-num">3</span> Informações do Patch</div>
+        <div class="step-title">Metadados (Opcional)</div>
+        <div class="step-desc">Identifique seu patch para os usuários.</div>
+        <div class="field-group">
+          <div class="field-row">
+            <div class="field">
+              <label>Nome do Jogo</label>
+              <input type="text" id="infoGame" placeholder="Ex: God of War II">
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Nome do Patch</label>
+              <input type="text" id="infoPatch" placeholder="Ex: Dublagem PT-BR v1.0">
+            </div>
+            <div class="field">
+              <label>Autor</label>
+              <input type="text" id="infoAuthor" placeholder="Seu nick">
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Tipo (ex: Dublado)</label>
+              <input type="text" id="infoType" placeholder="Dublado, Legendado..." list="typesList">
+              <datalist id="typesList">
+                <option value="Dublado">
+                <option value="Legendado">
+                <option value="Dublado + Legendado">
+                <option value="Tradução de Menu">
+              </datalist>
+            </div>
+            <div class="field">
+              <label>Região da ISO</label>
+              <input type="text" id="infoISO" placeholder="Ex: USA ou SLUS_212.15">
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Versão do Patch</label>
+              <input type="text" id="infoVersion" placeholder="Ex: 1.0">
+            </div>
+            <div class="field">
+              <label>Idioma</label>
+              <input type="text" id="infoLanguage" placeholder="Ex: Português (BR)" value="Português (BR)">
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <button class="action-btn create-btn" id="btnRunCreate" onclick="runCreate()" disabled>
+        ⚡ Gerar .gpatch (Auto)
+      </button>
+
+      <div class="progress-card" id="createProgress">
+        <div class="progress-header">
+          <span class="progress-title">Gerando patch...</span>
+          <span class="progress-pct" id="createPct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="createFill"></div>
+        </div>
+        <div class="progress-log" id="createLog"></div>
+      </div>
+
+      <div class="result-card" id="createResult"></div>
+    </div>
+
+    <footer>
+      GPatch · Processamento 100% local · Nenhum dado enviado<br>
+      <a href="#" class="embed-link" onclick="showEmbed(); return false;"
+        style="color:var(--cyan); text-decoration:none; margin-top:12px; display:inline-block; padding: 4px;">&lt;/&gt;
+        Código de Embed</a>
+    </footer>
+  </div>
+
+  <!-- ══════════════════ EMBED MODAL ══════════════════ -->
+  <div id="embedModal" class="modal-overlay" onclick="closeEmbedModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">&lt;/&gt; Gerador de Código Embed</div>
+        <button class="modal-close" onclick="closeEmbedModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="embed-option-group">
+          <label class="embed-label">Modo de Exibição / Tamanho</label>
+          <div class="embed-radio-group">
+            <label class="embed-radio-card">
+              <input type="radio" name="embedLayout" value="standard" checked onchange="updateEmbedCode()">
+              <div class="radio-content">
+                <span class="radio-title">📦 Padrão (Caixa 800px)</span>
+                <span class="radio-desc">Ideal para blogs e postagens com largura fixa</span>
+              </div>
+            </label>
+            <label class="embed-radio-card">
+              <input type="radio" name="embedLayout" value="full" onchange="updateEmbedCode()">
+              <div class="radio-content">
+                <span class="radio-title">🖥️ Página Inteira / Tela Cheia</span>
+                <span class="radio-desc">Ocupa 100% da largura e altura disponível</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-checkbox-label">
+            <input type="checkbox" id="embedHideCreate" checked onchange="updateEmbedCode()">
+            <span>Ocultar aba "Criar Patch" (exibir somente "Aplicar Patch")</span>
+          </label>
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label" for="embedPresetsUrl">URL de Presets Personalizada (Opcional)</label>
+          <input type="text" id="embedPresetsUrl" class="embed-input" placeholder="https://exemplo.com/meus-presets.json" oninput="updateEmbedCode()">
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label" for="embedPatchUrl">URL do Patch pré-carregado (Opcional)</label>
+          <input type="text" id="embedPatchUrl" class="embed-input" placeholder="https://exemplo.com/meu-patch.gpatch" oninput="updateEmbedCode()">
+        </div>
+
+        <div class="embed-option-group">
+          <label class="embed-label">Código HTML Gerado</label>
+          <textarea id="embedCodeOutput" class="embed-code-box" readonly onclick="this.select()"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnCopyEmbed" class="modal-btn primary" onclick="copyEmbedCode()">📋 Copiar Código</button>
+        <button class="modal-btn secondary" onclick="closeEmbedModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════════════
+    //  STATE
+    // ═══════════════════════════════════════════════
+    const state = {
+      applyISO: null,   // { file, name, size }
+      applyPatch: null, // { buffer, name, size }
+      createOrig: null, // { file, name, size }
+      createMod: null,  // { file, name, size }
+    };
+    let createMode = 'auto';
+
+    // ═══════════════════════════════════════════════
+    //  ISO 9660 READER (ASYNC)
+    // ═══════════════════════════════════════════════
+    class ISO9660Reader {
+      constructor(file) {
+        this.file = file;
+        this.SECTOR = 2048;
+        this.files = {}; // path -> { lba, size, dirLBA, dirPos }
+        this.dirSectors = new Map(); // sectorLBA -> { data: Uint8Array, size }
+      }
+
+      async readSector(lba, count = 1) {
+        const start = lba * this.SECTOR;
+        const end = start + count * this.SECTOR;
+        const slice = this.file.slice(start, end);
+        return new Uint8Array(await slice.arrayBuffer());
+      }
+
+      async parsePVD() {
+        const data = await this.readSector(16, 1);
+        const view = new DataView(data.buffer);
+        if (view.getUint8(0) !== 1 || String.fromCharCode(...data.slice(1, 6)) !== 'CD001')
+          throw new Error('Arquivo inválido: não é uma imagem ISO 9660 padrão.');
+        return { lba: view.getUint32(156 + 2, true), size: view.getUint32(156 + 10, true) };
+      }
+
+      async scanDir(lba, size, path) {
+        const numSectors = Math.ceil(size / this.SECTOR);
+        const data = await this.readSector(lba, numSectors);
+        this.dirSectors.set(lba, { data, size });
+        const view = new DataView(data.buffer);
+
+        let pos = 0;
+        while (pos < size) {
+          const recLen = view.getUint8(pos);
+          if (recLen === 0) {
+            // next sector boundary
+            const sec = Math.ceil((pos + 1) / this.SECTOR) * this.SECTOR;
+            if (sec >= size) break;
+            pos = sec;
+            continue;
+          }
+          const fileLBA = view.getUint32(pos + 2, true);
+          const fileSize = view.getUint32(pos + 10, true);
+          const flags = view.getUint8(pos + 25);
+          const nameLen = view.getUint8(pos + 32);
+          if (nameLen > 0) {
+            const raw = String.fromCharCode(...data.slice(pos + 33, pos + 33 + nameLen));
+            if (raw !== '\x00' && raw !== '\x01') {
+              const name = raw.replace(/;[0-9]+$/, '');
+              const full = path ? `${path}/${name}` : name;
+              if (flags & 2) {
+                await this.scanDir(fileLBA, fileSize, full);
+              } else {
+                this.files[full] = { lba: fileLBA, size: fileSize, dirLBA: lba, dirPos: pos };
+              }
+            }
+          }
+          pos += recLen;
+        }
+      }
+
+      async parse() {
+        const root = await this.parsePVD();
+        await this.scanDir(root.lba, root.size, '');
+        return this.files;
+      }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  UTILITIES
+    // ═══════════════════════════════════════════════
+    async function sha256(fileOrBuffer) {
+      let buffer;
+      if (fileOrBuffer instanceof File) {
+        // Hash apenas os primeiros 16MB por performance e memória
+        const slice = fileOrBuffer.slice(0, 16 * 1024 * 1024);
+        buffer = await slice.arrayBuffer();
+      } else {
+        buffer = fileOrBuffer;
+      }
+      const h = await crypto.subtle.digest('SHA-256', buffer);
+      return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function fmtSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+      return (bytes / 1073741824).toFixed(2) + ' GB';
+    }
+
+    function fmtName(n) { return n.length > 30 ? n.slice(0, 27) + '…' : n; }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function setProgress(idFill, idPct, idLog, pct, msg, type = '') {
+      document.getElementById(idFill).style.width = pct + '%';
+      document.getElementById(idPct).textContent = Math.round(pct) + '%';
+      const log = document.getElementById(idLog);
+      log.innerHTML = `<span class="log-entry ${type ? 'log-' + type : ''}">${msg}</span>`;
+    }
+
+    async function readBlobAsUint8Array(blob) {
+      try {
+        return new Uint8Array(await blob.arrayBuffer());
+      } catch (e) {
+        console.warn("arrayBuffer() via FileReader falhou, lendo em chunks...", e);
+        const size = blob.size;
+        const buffer = new Uint8Array(size);
+        const CHUNK = 10 * 1024 * 1024; // 10MB
+        for (let offset = 0; offset < size; offset += CHUNK) {
+          const slice = blob.slice(offset, offset + CHUNK);
+          buffer.set(new Uint8Array(await slice.arrayBuffer()), offset);
+        }
+        return buffer;
+      }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  FILE LOADING
+    // ═══════════════════════════════════════════════
+    async function loadFile(key, input) {
+      const file = input.files[0];
+      if (!file) return;
+
+      if (key === 'applyPatch') {
+        const isXDeltaName = !!file.name.match(/\.(xdelta|vcdiff)$/i);
+        const slice = await file.slice(0, 16).arrayBuffer();
+        const magic = new Uint8Array(slice);
+        const isXDelta = isXDeltaName || (magic[0] === 0xD6 && magic[1] === 0xC3 && magic[2] === 0xC4);
+
+        if (isXDelta) {
+          state[key] = { file: file, buffer: null, name: file.name, size: file.size, isXDelta: true };
+          updateDropZone(key, file);
+          const meta = {
+            game: file.name.replace(/\.(xdelta|vcdiff)$/i, '').replace(/_/g, ' '),
+            patchName: 'Patch xdelta3 (VCDIFF)',
+            author: 'Criador do mod',
+            language: '-',
+            type: 'xdelta3 / WebAssembly',
+            iso: 'Conforme especificado pelo autor',
+            version: 'xdelta3'
+          };
+          showPatchInfo(meta);
+          checkButtons();
+          resetResult('apply');
+        } else {
+          // O patch .gpatch/.dubpatch é carregado inteiro (é pequeno)
+          const reader = new FileReader();
+          reader.onload = async e => {
+            const buffer = e.target.result;
+            state[key] = { file: file, buffer: buffer, name: file.name, size: file.size, isXDelta: false };
+            updateDropZone(key, file);
+
+            const meta = await extractPatchMeta(buffer);
+            showPatchInfo(meta);
+
+            checkButtons();
+            resetResult('apply');
+          };
+          reader.readAsArrayBuffer(file);
+        }
+      } else {
+        // ISOs mantêm referência como File (sem ir pra RAM)
+        state[key] = { file: file, name: file.name, size: file.size };
+        updateDropZone(key, file);
+        checkButtons();
+        if (key === 'applyISO') resetResult('apply');
+        if (key === 'createOrig' || key === 'createMod') resetResult('create');
+      }
+    }
+
+    function updateDropZone(key, file) {
+      const idMap = { applyISO: 'dzApplyISO', applyPatch: 'dzApplyPatch', createOrig: 'dzCreateOrig', createMod: 'dzCreateMod' };
+      const dz = document.getElementById(idMap[key]);
+      dz.classList.add('file-loaded');
+      dz.innerHTML = `
+    <input type="file" accept="${file.name.match(/\.(gpatch|dubpatch|zip|xdelta|vcdiff)$/i) ? '.gpatch,.dubpatch,.zip,.xdelta,.vcdiff' : '.iso,.bin,.img'}" onchange="loadFile('${key}',this)">
+    <div class="dz-icon">✅</div>
+    <div class="file-name">${fmtName(file.name)}</div>
+    <div class="file-size">${fmtSize(file.size)}</div>
+    <div class="dz-tag" style="margin-top:8px;color:var(--green)">Toque para trocar</div>
+  `;
+    }
+
+    function checkButtons() {
+      const btnApply = document.getElementById('btnRunApply');
+      const btnCreate = document.getElementById('btnRunCreate');
+      btnApply.disabled = !(state.applyISO && state.applyPatch);
+      btnCreate.disabled = !(state.createOrig && state.createMod);
+    }
+
+    function resetResult(mode) {
+      document.getElementById(mode + 'Result').className = 'result-card';
+      document.getElementById(mode + 'Result').innerHTML = '';
+      document.getElementById(mode + 'Progress').classList.remove('visible');
+    }
+
+    async function extractPatchMeta(bufferOrFile) {
+      try {
+        let buffer;
+        if (bufferOrFile instanceof File || bufferOrFile instanceof Blob) {
+          buffer = await bufferOrFile.slice(0, 65536).arrayBuffer();
+        } else {
+          buffer = bufferOrFile;
+        }
+        const magic = new Uint8Array(buffer, 0, 4);
+        if (magic[0] === 0xD6 && magic[1] === 0xC3 && magic[2] === 0xC4) {
+          return {
+            game: (bufferOrFile.name || 'Jogo').replace(/\.(xdelta|vcdiff)$/i, '').replace(/_/g, ' '),
+            patchName: 'Patch xdelta3 (VCDIFF)',
+            author: 'Criador do mod',
+            language: '-',
+            type: 'xdelta3 / WebAssembly',
+            iso: '-',
+            version: 'xdelta3'
+          };
+        }
+        const isGPBin = (magic[0] === 0x47 && magic[1] === 0x50 && magic[2] === 0x03);
+        if (isGPBin) {
+          const view = new DataView(buffer);
+          const metaLen = view.getUint32(4, true);
+          const metaJson = new TextDecoder().decode(new Uint8Array(buffer, 8, metaLen));
+          return JSON.parse(metaJson);
+        } else {
+          const zip = await JSZip.loadAsync(buffer);
+          const metaStr = await zip.file('metadata.json').async('string');
+          return JSON.parse(metaStr);
+        }
+      } catch (e) {
+        console.warn('Falha ao extrair metadados:', e);
+        return null;
+      }
+    }
+
+    function showPatchInfo(meta) {
+      const card = document.getElementById('patchInfoCard');
+      if (!meta) {
+        card.classList.remove('visible');
+        return;
+      }
+
+      const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        el.textContent = val || 'Não informado';
+        el.classList.toggle('empty', !val);
+      };
+
+      setVal('piGame', meta.game);
+      setVal('piPatch', meta.patchName);
+      setVal('piAuthor', meta.author);
+      setVal('piLang', meta.language);
+      setVal('piType', meta.type);
+      setVal('piIso', meta.iso);
+
+      document.getElementById('piVersion').textContent = meta.version ? `v${meta.version}` : 'v1.0';
+      card.classList.add('visible');
+    }
+
+    // ═══════════════════════════════════════════════
+    //  MODE TOGGLE
+    // ═══════════════════════════════════════════════
+    function setMode(m) {
+      document.getElementById('panelApply').classList.toggle('active', m === 'apply');
+      document.getElementById('panelCreate').classList.toggle('active', m === 'create');
+      document.getElementById('btnApply').classList.toggle('active', m === 'apply');
+      document.getElementById('btnCreate').classList.toggle('active', m === 'create');
+    }
+
+    function setCreateMode(m) {
+      createMode = m;
+      document.getElementById('btnModeAuto').classList.toggle('active', m === 'auto');
+      document.getElementById('btnModeXdelta').classList.toggle('active', m === 'xdelta');
+      document.getElementById('btnModeFile').classList.toggle('active', m === 'file');
+      document.getElementById('btnModeBin').classList.toggle('active', m === 'binary');
+      const desc = document.getElementById('createModeDesc');
+      const btn = document.getElementById('btnRunCreate');
+      if (m === 'auto') {
+        desc.innerHTML = '<strong>Modo automático:</strong> escolhe o melhor método (Binário para arquivos grandes, Arquivo para soltos).';
+        btn.innerHTML = '⚡ Gerar .gpatch (Auto)';
+      } else if (m === 'xdelta') {
+        desc.innerHTML = '<strong>Padrão xdelta3:</strong> gera um arquivo <strong>.xdelta</strong> padrão da indústria (RFC 3284 VCDIFF), compatível com emuladores, Rom Patcher e PC.';
+        btn.innerHTML = '🔺 Gerar .xdelta (Padrão de Mercado)';
+      } else if (m === 'file') {
+        desc.innerHTML = '<strong>Modo arquivo:</strong> melhor para caso os arquivos internos forem soltos.';
+        btn.innerHTML = '⚡ Gerar .gpatch (Arquivo)';
+      } else {
+        desc.innerHTML = '<strong>Modo binário:</strong> melhor para caso os arquivos internos sejam grandes 2gb+.';
+        btn.innerHTML = '⚡ Gerar .gpatch (Binário)';
+      }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  PRELOADED PATCH (via URL ?patch=...)
+    // ═══════════════════════════════════════════════
+    let preloadedPatchBuffer = null;
+    let preloadedPatchMeta = null;
+
+    async function checkURLPatch() {
+      const params = new URLSearchParams(location.search);
+      const patchURL = params.get('patch');
+      if (!patchURL) return;
+      try {
+        const banner = document.getElementById('preloadBanner');
+        const pbName = document.getElementById('preloadName');
+        const pbLabel = document.querySelector('.pb-label');
+
+        pbLabel.textContent = "Baixando Patch...";
+        pbName.textContent = "Aguarde...";
+        banner.classList.add('visible');
+        document.getElementById('applyPatchStep').style.display = 'none';
+
+        const res = await fetch(patchURL);
+        const buf = await res.arrayBuffer();
+
+        const meta = await extractPatchMeta(buf);
+        if (!meta) throw new Error("Metadados inválidos");
+
+        preloadedPatchBuffer = buf;
+        preloadedPatchMeta = meta;
+        state.applyPatch = { buffer: buf, name: meta.patchName + '.gpatch', size: buf.byteLength };
+
+        pbLabel.textContent = "Patch pré-carregado";
+        const label = `${meta.game || 'PS2 Game'} — ${meta.patchName || 'Dublagem'}`;
+        pbName.textContent = label;
+        showPatchInfo(meta);
+        checkButtons();
+      } catch (e) {
+        console.warn('Falha ao carregar patch da URL:', e);
+        clearPreload();
+      }
+    }
+
+    function selectPreset(p) {
+      clearPreload();
+      document.getElementById('applyPatchStep').style.display = 'none';
+      const banner = document.getElementById('preloadBanner');
+      const pbName = document.getElementById('preloadName');
+      const pbLabel = document.querySelector('.pb-label');
+
+      pbLabel.textContent = "Patch Selecionado (Aguardando Download)";
+
+      pbName.innerHTML = `
+        <div style="display:flex; flex-wrap: wrap; gap: 8px; justify-content:space-between; align-items:center; width:100%; margin-top: 4px;">
+          <span>${p.name}</span>
+          <button onclick="loadPreset('${p.url}', '${p.name}')" style="background:var(--cyan); color:#000; border:none; padding:6px 12px; border-radius:6px; font-family:'Space Mono',monospace; font-size:11px; font-weight:bold; cursor:pointer; box-shadow:0 0 10px rgba(0, 212, 255, 0.4);">⬇️ Baixar Patch para Memória</button>
+        </div>
+      `;
+
+      banner.classList.add('visible');
+
+      showPatchInfo({
+        game: p.name,
+        patchName: p.type || 'Patch',
+        author: p.author || 'Desconhecido',
+        language: p.language || '-',
+        type: p.type || '-',
+        iso: p.iso || '-',
+        version: p.version || ''
+      });
+
+      checkButtons();
+    }
+
+    async function loadPreset(url, name) {
+      try {
+        const pbName = document.getElementById('preloadName');
+        const pbLabel = document.querySelector('.pb-label');
+
+        pbLabel.textContent = "Baixando Patch...";
+        pbName.innerHTML = `<span>${name}</span> <span style="color:var(--cyan); font-size:10px; margin-left:10px; animation: pulse-border 1s infinite;">Aguarde...</span>`;
+
+        const res = await fetch(url);
+        const buf = await res.arrayBuffer();
+
+        const meta = await extractPatchMeta(buf);
+        if (!meta) throw new Error("Metadados inválidos");
+
+        preloadedPatchBuffer = buf;
+        preloadedPatchMeta = meta;
+        state.applyPatch = { buffer: buf, name: meta.patchName + '.gpatch', size: buf.byteLength };
+
+        pbLabel.textContent = "Patch pré-carregado";
+        pbName.textContent = `${meta.game || name} — ${meta.patchName || 'Dublagem'}`;
+        showPatchInfo(meta);
+        checkButtons();
+      } catch (e) {
+        console.error('Falha ao baixar preset:', e);
+        alert('Erro ao baixar o patch!');
+        clearPreload();
+      }
+    }
+
+    function clearPreload() {
+      preloadedPatchBuffer = null;
+      preloadedPatchMeta = null;
+      state.applyPatch = null;
+      document.getElementById('preloadBanner').classList.remove('visible');
+      document.getElementById('applyPatchStep').style.display = '';
+      const pbLabel = document.querySelector('.pb-label');
+      if (pbLabel) pbLabel.textContent = "Patch pré-carregado";
+      showPatchInfo(null);
+      checkButtons();
+    }
+
+    // ═══════════════════════════════════════════════
+    //  EMBED & URL OPTIONS
+    // ═══════════════════════════════════════════════
+    function checkURLParams() {
+      const params = new URLSearchParams(location.search);
+
+      // Desativar botão "Criar Patch" se nocreate=1 ou hide_create=1
+      const hideCreate = params.get('nocreate') === '1' || params.get('hide_create') === '1' || params.get('nocreate') === 'true';
+      if (hideCreate) {
+        const btnCreate = document.getElementById('btnCreate');
+        if (btnCreate) btnCreate.style.display = 'none';
+        const modeToggle = document.querySelector('.mode-toggle');
+        if (modeToggle) modeToggle.style.display = 'none';
+      }
+
+      // Modo página inteira (full page)
+      const isFull = params.get('full') === '1' || params.get('full') === 'true';
+      if (isFull) {
+        document.body.classList.add('embed-full');
+      }
+
+      // Se estiver incorporado
+      const isEmbed = params.get('embed') === '1' || params.get('embed') === 'true';
+      if (isEmbed || window.self !== window.top) {
+        document.body.classList.add('is-embed');
+      }
+    }
+
+    function showEmbed() {
+      const modal = document.getElementById('embedModal');
+      if (modal) {
+        modal.classList.add('active');
+        updateEmbedCode();
+      }
+    }
+
+    function closeEmbedModal(e) {
+      if (!e || e.target === document.getElementById('embedModal') || (e.currentTarget && (e.currentTarget.classList.contains('modal-close') || e.currentTarget.classList.contains('secondary')))) {
+        document.getElementById('embedModal').classList.remove('active');
+      }
+    }
+
+    function updateEmbedCode() {
+      let baseUrl = window.location.href.split('?')[0];
+      const params = new URLSearchParams();
+
+      const layout = document.querySelector('input[name="embedLayout"]:checked')?.value || 'standard';
+      const hideCreate = document.getElementById('embedHideCreate')?.checked;
+      const presetsUrl = document.getElementById('embedPresetsUrl')?.value?.trim();
+      const patchUrl = document.getElementById('embedPatchUrl')?.value?.trim();
+
+      params.set('embed', '1');
+
+      if (hideCreate) {
+        params.set('nocreate', '1');
+      }
+
+      if (layout === 'full') {
+        params.set('full', '1');
+      }
+
+      if (presetsUrl) {
+        params.set('presets', presetsUrl);
+      }
+
+      if (patchUrl) {
+        params.set('patch', patchUrl);
+      }
+
+      const finalUrl = `${baseUrl}?${params.toString()}`;
+
+      let code = '';
+      if (layout === 'full') {
+        code = `<iframe src="${finalUrl}" width="100%" height="100%" style="border:none; width:100%; height:100vh; min-height:800px; display:block;"></iframe>`;
+      } else {
+        code = `<iframe src="${finalUrl}" width="100%" height="800" style="border:none; border-radius:12px; max-width:800px; margin:0 auto; display:block;"></iframe>`;
+      }
+
+      const output = document.getElementById('embedCodeOutput');
+      if (output) output.value = code;
+    }
+
+    async function copyEmbedCode() {
+      const output = document.getElementById('embedCodeOutput');
+      const btn = document.getElementById('btnCopyEmbed');
+      if (!output) return;
+
+      try {
+        await navigator.clipboard.writeText(output.value);
+        const originalText = btn.textContent;
+        btn.textContent = '✅ Copiado!';
+        btn.style.background = 'linear-gradient(135deg, #005533, #00aa55)';
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.style.background = '';
+        }, 2000);
+      } catch (err) {
+        output.select();
+        document.execCommand('copy');
+        alert('Código copiado!');
+      }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  APPLY PATCH
+    // ═══════════════════════════════════════════════
+    async function runApply() {
+      const btn = document.getElementById('btnRunApply');
+      btn.disabled = true;
+      resetResult('apply');
+
+      const prog = document.getElementById('applyProgress');
+      prog.classList.add('visible');
+
+      const log = (msg, pct, type = '') => {
+        setProgress('applyFill', 'applyPct', 'applyLog', pct, msg, type);
+        return sleep(20);
+      };
+
+      const origFile = state.applyISO.file;
+      const patchObj = state.applyPatch;
+      const patchFile = patchObj.file;
+      let patchBuf = patchObj.buffer;
+      const resultEl = document.getElementById('applyResult');
+
+      try {
+        let isXDelta = !!patchObj.isXDelta;
+        let magic = null;
+        if (patchBuf && patchBuf.byteLength >= 4) {
+          magic = new Uint8Array(patchBuf, 0, 4);
+          if (magic[0] === 0xD6 && magic[1] === 0xC3 && magic[2] === 0xC4) isXDelta = true;
+        } else if (patchFile) {
+          const mSlice = await patchFile.slice(0, 4).arrayBuffer();
+          magic = new Uint8Array(mSlice);
+          if (magic[0] === 0xD6 && magic[1] === 0xC3 && magic[2] === 0xC4) isXDelta = true;
+        }
+
+        if (isXDelta) {
+          await log('Patch xdelta3 (VCDIFF) detectado...', 5);
+          await log('Carregando motor WebAssembly (xdelta3)...', 8);
+
+          let wasmBinary = null;
+          try {
+            const wasmRes = await fetch('xdelta3.wasm');
+            if (wasmRes.ok) wasmBinary = await wasmRes.arrayBuffer();
+          } catch (e) {
+            console.warn('Fetch xdelta3.wasm:', e);
+          }
+
+          await log('Iniciando decodificação em segundo plano...', 12);
+          const actualPatch = patchFile || new Blob([patchBuf]);
+          const outputChunks = [];
+
+          await new Promise((resolve, reject) => {
+            let worker;
+            try {
+              worker = new Worker('xdelta3.worker.js', { type: 'module' });
+            } catch (err) {
+              reject(new Error('Falha ao instanciar Web Worker: ' + err.message));
+              return;
+            }
+
+            worker.onmessage = e => {
+              const data = e.data;
+              if (!data) return;
+
+              if (data.type === 'progress') {
+                const pct = 12 + Math.round(data.pct * 0.82); // 12% a 94%
+                setProgress('applyFill', 'applyPct', 'applyLog', pct,
+                  `Decodificando xdelta3: ${fmtSize(data.current)} / ${fmtSize(data.total)} (${data.pct}%)...`);
+              } else if (data.type === 'chunk') {
+                outputChunks.push(data.bytes);
+              } else if (data.type === 'done') {
+                worker.terminate();
+                if (data.error) {
+                  reject(new Error(data.errorMessage || 'Erro desconhecido ao aplicar xdelta3'));
+                } else {
+                  resolve();
+                }
+              }
+            };
+
+            worker.onerror = err => {
+              worker.terminate();
+              reject(new Error('Erro no worker xdelta3: ' + (err.message || 'Falha')));
+            };
+
+            const postData = {
+              command: 'start',
+              sourceFile: origFile,
+              patchFile: actualPatch,
+              disableChecksum: false,
+              wasmBinary: wasmBinary
+            };
+
+            if (wasmBinary) {
+              worker.postMessage(postData, [wasmBinary]);
+            } else {
+              worker.postMessage(postData);
+            }
+          });
+
+          await log('Montando ISO final...', 96);
+          await sleep(50);
+
+          const blob = new Blob(outputChunks, { type: 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
+          const dlName = `${origName}_patched.iso`;
+
+          await log('Concluído!', 100);
+
+          resultEl.className = 'result-card success visible';
+          resultEl.innerHTML = `
+            <div class="result-icon">🎉</div>
+            <div class="result-title">Patch xdelta3 Aplicado!</div>
+            <div class="result-stats">
+              <div class="stat-badge"><span class="stat-val">xdelta3</span><span class="stat-label">Motor Wasm</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(blob.size)}</span><span class="stat-label">ISO Final</span></div>
+            </div>
+            <div class="result-info">
+              <strong>${origName}</strong><br>
+              Patch padrão de mercado .xdelta aplicado com sucesso via WebAssembly.<br>
+              ISO pronta para uso no emulador ou console PS2.
+            </div>
+            <a class="dl-btn dl-btn-iso" href="${url}" download="${dlName}">
+              ⬇️ Baixar ${dlName}
+            </a>
+            <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
+          `;
+          return;
+        }
+
+        if (!patchBuf && patchFile) {
+          patchBuf = await patchFile.arrayBuffer();
+        }
+        if (!magic) {
+          magic = new Uint8Array(patchBuf, 0, 4);
+        }
+        const isGPBin = (magic[0] === 0x47 && magic[1] === 0x50 && magic[2] === 0x03);
+
+        if (isGPBin) {
+          const compressionFlag = magic[3]; // 0x00 = raw, 0x01 = deflate
+          await log(`Patch GPatch ${compressionFlag ? '(Comprimido)' : '(Sparse Delta)'} detectado...`, 5);
+          const view = new DataView(patchBuf);
+          const metaLen = view.getUint32(4, true);
+          const metaJson = new TextDecoder().decode(new Uint8Array(patchBuf, 8, metaLen));
+          const meta = JSON.parse(metaJson);
+
+          await log('Verificando integridade da ISO...', 8);
+          try {
+            const hash = await sha256(origFile);
+            if (meta.originalHash && hash !== meta.originalHash) {
+              await log('Aviso: hash diferente, continuando...', 10, 'warn');
+            }
+          } catch (e) {
+            await log('Aviso: hash não pôde ser verificado...', 10, 'warn');
+          }
+
+          let dataU8, dataDv;
+          let dataOffset = 0;
+
+          if (compressionFlag === 0x01) {
+            const rawSize = view.getUint32(8 + metaLen, true);
+            const compressedPayload = new Uint8Array(patchBuf, 8 + metaLen + 4);
+
+            await log(`Descomprimindo ${fmtSize(compressedPayload.length)} → ${fmtSize(rawSize)}...`, 12);
+
+            const ds = new DecompressionStream('deflate');
+            const writer = ds.writable.getWriter();
+            const reader = ds.readable.getReader();
+            const decompChunks = [];
+
+            const DECOMP_CHUNK = 4 * 1024 * 1024;
+            const writeP = (async () => {
+              for (let i = 0; i < compressedPayload.length; i += DECOMP_CHUNK) {
+                const chunk = compressedPayload.subarray(i, Math.min(i + DECOMP_CHUNK, compressedPayload.length));
+                await writer.write(chunk);
+                setProgress('applyFill', 'applyPct', 'applyLog',
+                  12 + (i / compressedPayload.length) * 15,
+                  `Descomprimindo: ${fmtSize(i)}/${fmtSize(compressedPayload.length)}...`);
+              }
+              await writer.close();
+            })();
+
+            const readP = (async () => {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                decompChunks.push(value);
+              }
+            })();
+
+            await Promise.all([writeP, readP]);
+
+            let totalLen = 0;
+            for (const c of decompChunks) totalLen += c.length;
+            dataU8 = new Uint8Array(totalLen);
+            let dOff = 0;
+            for (const c of decompChunks) {
+              dataU8.set(c, dOff);
+              dOff += c.length;
+            }
+            dataDv = new DataView(dataU8.buffer);
+            dataOffset = 0;
+
+            await log('Descompressão concluída!', 28);
+          } else {
+            dataU8 = new Uint8Array(patchBuf, 8 + metaLen);
+            dataDv = new DataView(dataU8.buffer, dataU8.byteOffset, dataU8.byteLength);
+            dataOffset = 0;
+          }
+
+          const numSectors = dataDv.getUint32(dataOffset, true);
+          dataOffset += 4;
+          const SECTOR = 2048;
+
+          await log(`${numSectors} setores com deltas para aplicar...`, 30);
+
+          const sectorPatches = new Map();
+          for (let i = 0; i < numSectors; i++) {
+            const sectorIdx = dataDv.getUint32(dataOffset, true);
+            dataOffset += 4;
+            const numRuns = dataDv.getUint16(dataOffset, true);
+            dataOffset += 2;
+            const runs = [];
+            for (let r = 0; r < numRuns; r++) {
+              const rOff = dataDv.getUint16(dataOffset, true); dataOffset += 2;
+              const rLen = dataDv.getUint16(dataOffset, true); dataOffset += 2;
+              runs.push({ o: rOff, d: dataU8.subarray(dataOffset, dataOffset + rLen) });
+              dataOffset += rLen;
+            }
+            sectorPatches.set(sectorIdx, runs);
+            if (i % 5000 === 0 && i > 0) {
+              setProgress('applyFill', 'applyPct', 'applyLog', 30 + (i / numSectors) * 15, `Lendo patch: ${i}/${numSectors}...`);
+              await sleep(0);
+            }
+          }
+
+          await log('Montando ISO final...', 48);
+          const origSectors = Math.ceil(origFile.size / SECTOR);
+          let maxSector = origSectors;
+          for (const idx of sectorPatches.keys()) {
+            if (idx + 1 > maxSector) maxSector = idx + 1;
+          }
+          const blobParts = [];
+          let sliceStart = null;
+
+          for (let lba = 0; lba < maxSector; lba++) {
+            if (sectorPatches.has(lba)) {
+              if (sliceStart !== null) {
+                blobParts.push(origFile.slice(sliceStart * SECTOR, lba * SECTOR));
+                sliceStart = null;
+              }
+              const patched = new Uint8Array(SECTOR);
+              if (lba * SECTOR < origFile.size) {
+                const orig = new Uint8Array(await origFile.slice(lba * SECTOR, Math.min((lba + 1) * SECTOR, origFile.size)).arrayBuffer());
+                patched.set(orig);
+              }
+              for (const run of sectorPatches.get(lba)) {
+                patched.set(run.d, run.o);
+              }
+              blobParts.push(patched);
+            } else {
+              if (sliceStart === null) sliceStart = lba;
+            }
+            if (lba % 50000 === 0 && lba > 0) {
+              setProgress('applyFill', 'applyPct', 'applyLog', 48 + (lba / maxSector) * 42, `Montando setor ${lba}/${maxSector}...`);
+              await sleep(0);
+            }
+          }
+          if (sliceStart !== null) {
+            blobParts.push(origFile.slice(sliceStart * SECTOR, origFile.size));
+          }
+
+          await log('Criando download...', 95);
+          await sleep(60);
+
+          const blob = new Blob(blobParts, { type: 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
+          const dlName = `${origName}_patched.iso`;
+
+          await log('Concluído!', 100);
+
+          resultEl.className = 'result-card success visible';
+          resultEl.innerHTML = `
+            <div class="result-icon">🎉</div>
+            <div class="result-title">Patch Aplicado!</div>
+            <div class="result-stats">
+              <div class="stat-badge"><span class="stat-val">${numSectors}</span><span class="stat-label">Setores</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(blob.size)}</span><span class="stat-label">ISO Final</span></div>
+            </div>
+            <div class="result-info">
+              ${meta.game ? `<strong>${meta.game}</strong> — ` : ''}
+              ${meta.patchName || 'Patch'}<br>
+              ${meta.author ? `Por: ${meta.author}<br>` : ''}
+              ISO pronta para uso.
+            </div>
+            <a class="dl-btn dl-btn-iso" href="${url}" download="${dlName}">
+              ⬇️ Baixar ${dlName}
+            </a>
+            <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
+          `;
+          return;
+        }
+
+        // JSZip Fallback (GPatch v1/v2)
+        await log('Lendo patch legado...', 5);
+        const zip = await JSZip.loadAsync(patchBuf);
+        const meta = JSON.parse(await zip.file('metadata.json').async('string'));
+
+        await log('Verificando integridade da ISO (pode demorar)...', 10);
+        let hash;
+        try {
+          hash = await sha256(origFile);
+          if (meta.originalHash && hash !== meta.originalHash) {
+            await log('Aviso: hash diferente, continuando por conta e risco...', 15, 'warn');
+          }
+        } catch (hashErr) {
+          await log('Aviso: hash não pôde ser verificado, continuando...', 15, 'warn');
+        }
+
+        await log('Analisando estrutura ISO...', 20);
+        const iso = new ISO9660Reader(origFile);
+        await iso.parse();
+
+        const changedFiles = meta.changedFiles;
+        await log(`${changedFiles.length} arquivo(s) para aplicar...`, 25);
+
+        // Carregar patches para RAM (eles são pequenos em relação a ISO)
+        const patches = [];
+        for (let i = 0; i < changedFiles.length; i++) {
+          const fi = changedFiles[i];
+          const pct = 25 + (i / changedFiles.length) * 20;
+          await log(`Lendo: ${fi.path}`, pct);
+          const newData = await zip.file(`files/${fi.path}`).async('uint8array');
+          const origInfo = iso.files[fi.path];
+          if (!origInfo) {
+            await log(`Aviso: ${fi.path} não encontrado na ISO original`, pct, 'warn');
+            continue;
+          }
+          patches.push({ origInfo, newData, path: fi.path });
+        }
+
+        await log('Preparando mapeamento de blocos...', 46);
+        const sameSz = patches.filter(p => p.newData.length === p.origInfo.size);
+        const diffSz = patches.filter(p => p.newData.length !== p.origInfo.size);
+
+        const sectorOverrides = new Map(); // LBA -> Uint8Array
+        const appendedBlobs = [];
+        const origSectors = Math.ceil(origFile.size / 2048);
+        let nextAppendLBA = origSectors;
+
+        // 1. Same-size replacements
+        for (let p of sameSz) {
+          const numSec = Math.ceil(p.newData.length / 2048);
+          for (let i = 0; i < numSec; i++) {
+            const chunk = p.newData.slice(i * 2048, (i + 1) * 2048);
+            const padded = new Uint8Array(2048);
+            padded.set(chunk);
+            sectorOverrides.set(p.origInfo.lba + i, padded);
+          }
+        }
+
+        // 2. Different-size replacements
+        for (let i = 0; i < diffSz.length; i++) {
+          const p = diffSz[i];
+          const pct = 50 + (i / Math.max(diffSz.length, 1)) * 20;
+          await log(`Realocando: ${p.path}`, pct);
+          const newLBA = nextAppendLBA;
+
+          const paddedLen = Math.ceil(p.newData.length / 2048) * 2048;
+          const padded = new Uint8Array(paddedLen);
+          padded.set(p.newData);
+          appendedBlobs.push(padded);
+
+          nextAppendLBA += paddedLen / 2048;
+
+          // Update directory record in RAM
+          const dirInfo = iso.dirSectors.get(p.origInfo.dirLBA);
+          const view = new DataView(dirInfo.data.buffer, dirInfo.data.byteOffset, dirInfo.data.byteLength);
+          const pos = p.origInfo.dirPos;
+          view.setUint32(pos + 2, newLBA, true);
+          view.setUint32(pos + 6, newLBA, false);
+          view.setUint32(pos + 10, p.newData.length, true);
+          view.setUint32(pos + 14, p.newData.length, false);
+        }
+
+        // Write modified dir sectors to sectorOverrides
+        for (const [lba, info] of iso.dirSectors.entries()) {
+          const numSec = Math.ceil(info.size / 2048);
+          for (let i = 0; i < numSec; i++) {
+            sectorOverrides.set(lba + i, info.data.slice(i * 2048, (i + 1) * 2048));
+          }
+        }
+
+        await log('Montando ISO Final na Memória Virtual...', 80);
+
+        // Build BlobParts
+        const blobParts = [];
+        let currentSliceStartLBA = null;
+
+        for (let lba = 0; lba < origSectors; lba++) {
+          if (sectorOverrides.has(lba)) {
+            if (currentSliceStartLBA !== null) {
+              blobParts.push(origFile.slice(currentSliceStartLBA * 2048, lba * 2048));
+              currentSliceStartLBA = null;
+            }
+            blobParts.push(sectorOverrides.get(lba));
+          } else {
+            if (currentSliceStartLBA === null) {
+              currentSliceStartLBA = lba;
+            }
+          }
+        }
+        if (currentSliceStartLBA !== null) {
+          blobParts.push(origFile.slice(currentSliceStartLBA * 2048, origSectors * 2048));
+        }
+
+        // Append different-size blobs
+        for (const app of appendedBlobs) {
+          blobParts.push(app);
+        }
+
+        await log('Criando download...', 92);
+        await sleep(60);
+
+        const blob = new Blob(blobParts, { type: 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
+        const dlName = `${origName}_dubbed.iso`;
+
+        await log('Concluído!', 100, '');
+
+        resultEl.className = 'result-card success visible';
+        resultEl.innerHTML = `
+      <div class="result-icon">🎉</div>
+      <div class="result-title">Patch Aplicado!</div>
+      <div class="result-stats">
+        <div class="stat-badge"><span class="stat-val">${sameSz.length + diffSz.length}</span><span class="stat-label">Arquivos</span></div>
+        <div class="stat-badge"><span class="stat-val">${fmtSize(blob.size)}</span><span class="stat-label">ISO Final</span></div>
+        ${diffSz.length > 0 ? `<div class="stat-badge"><span class="stat-val">${diffSz.length}</span><span class="stat-label">Realocados</span></div>` : ''}
+      </div>
+      <div class="result-info">
+        ${meta.game ? `<strong>${meta.game}</strong> — ` : ''}
+        ${meta.patchName || 'Dublagem'}<br>
+        ${meta.author ? `Por: ${meta.author}<br>` : ''}
+        ISO pronta para uso.
+      </div>
+      <a class="dl-btn dl-btn-iso" href="${url}" download="${dlName}">
+        ⬇️ Baixar ${dlName}
+      </a>
+      <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
+    `;
+
+      } catch (err) {
+        await log(err.message, 100, 'err');
+        resultEl.className = 'result-card error visible';
+        resultEl.innerHTML = `
+      <div class="result-icon">❌</div>
+      <div class="result-title">Erro!</div>
+      <div class="result-info">${err.message.replace(/\n/g, '<br>')}</div>
+      <button class="retry-btn" onclick="resetApply()">Tentar novamente</button>
+    `;
+        btn.disabled = false;
+      }
+    }
+
+    function resetApply() {
+      state.applyISO = null;
+      const dz = document.getElementById('dzApplyISO');
+      dz.classList.remove('file-loaded');
+      dz.innerHTML = `
+    <input type="file" accept=".iso,.bin,.img" onchange="loadFile('applyISO',this)">
+    <div class="dz-icon">💿</div>
+    <div class="dz-text"><strong>Toque para selecionar</strong><br>ou arraste o arquivo aqui</div>
+    <div class="dz-tag">.ISO · .BIN · .IMG</div>
+  `;
+      resetResult('apply');
+      checkButtons();
+    }
+
+    // ═══════════════════════════════════════════════
+    //  CREATE PATCH
+    // ═══════════════════════════════════════════════
+    async function runCreate() {
+      const btn = document.getElementById('btnRunCreate');
+      btn.disabled = true;
+      resetResult('create');
+
+      const prog = document.getElementById('createProgress');
+      prog.classList.add('visible');
+
+      const log = (msg, pct, type = '') => {
+        setProgress('createFill', 'createPct', 'createLog', pct, msg, type);
+        return sleep(20);
+      };
+
+      const origFile = state.createOrig.file;
+      const modFile = state.createMod.file;
+      const resultEl = document.getElementById('createResult');
+
+      try {
+        let mode = createMode;
+
+        if (mode === 'auto') {
+          await log('Modo automático: Analisando formato do arquivo...', 2);
+          try {
+            const tempIso = new ISO9660Reader(origFile);
+            await tempIso.parse();
+            let hasLargeFiles = false;
+            for (const path in tempIso.files) {
+              if (tempIso.files[path].size > 1.5 * 1024 * 1024 * 1024) { // 1.5GB
+                hasLargeFiles = true;
+                break;
+              }
+            }
+            if (hasLargeFiles) {
+              mode = 'binary';
+              await log('Modo Auto: Arquivo grande detectado. Usando Modo Binário.', 3);
+            } else {
+              mode = 'file';
+              await log('Modo Auto: Arquivos menores detectados. Usando Modo Arquivo.', 3);
+            }
+          } catch (e) {
+            mode = 'binary';
+            await log('Modo Auto: Formato não-ISO. Usando Modo Binário.', 3);
+          }
+        }
+
+        await log('Calculando hash da ISO original...', 3);
+        const origHash = await sha256(origFile);
+
+        const gameName = document.getElementById('infoGame').value.trim() || 'PS2 Game';
+        const patchName = document.getElementById('infoPatch').value.trim() || 'Dublagem PT-BR';
+        const author = document.getElementById('infoAuthor').value.trim() || '';
+        const patchType = document.getElementById('infoType').value.trim() || 'Dublado';
+        const isoRegion = document.getElementById('infoISO').value.trim() || 'USA';
+        const patchVersion = document.getElementById('infoVersion').value.trim() || '1.0';
+        const patchLanguage = document.getElementById('infoLanguage').value.trim() || '';
+
+        if (mode === 'xdelta') {
+          await log('Modo xdelta3 selecionado (RFC 3284 VCDIFF)...', 5);
+          const WIN_SIZE = 2 * 1024 * 1024; // 2MB por janela deslizante
+          const maxSize = Math.max(origFile.size, modFile.size);
+          const totalWindows = Math.ceil(modFile.size / WIN_SIZE);
+
+          const winParts = [
+            new Uint8Array([0xD6, 0xC3, 0xC4, 0x00, 0x00]) // Cabeçalho padrão VCDIFF
+          ];
+
+          let totalDiffBytes = 0;
+          let changedWindows = 0;
+
+          function write7BitInt(arr, val) {
+            val = Number(val);
+            const bytes = [];
+            bytes.push(val & 0x7F);
+            val = Math.floor(val / 128);
+            while (val > 0) {
+              bytes.push((val & 0x7F) | 0x80);
+              val = Math.floor(val / 128);
+            }
+            bytes.reverse();
+            for (let b of bytes) arr.push(b);
+          }
+
+          function buildVCDIFFWin(sourceOffset, sourceLen, targetLen, operations) {
+            const dataBuf = [];
+            const instBuf = [];
+            const addrBuf = [];
+
+            for (const op of operations) {
+              if (op.type === 'COPY') {
+                instBuf.push(19); // COPY mode SELF (0)
+                write7BitInt(instBuf, op.len);
+                write7BitInt(addrBuf, op.addr);
+              } else if (op.type === 'ADD') {
+                instBuf.push(1); // ADD
+                write7BitInt(instBuf, op.data.length);
+                for (let j = 0; j < op.data.length; j++) dataBuf.push(op.data[j]);
+              }
+            }
+
+            const deltaHead = [];
+            write7BitInt(deltaHead, targetLen);
+            deltaHead.push(0x00);
+            write7BitInt(deltaHead, dataBuf.length);
+            write7BitInt(deltaHead, instBuf.length);
+            write7BitInt(deltaHead, addrBuf.length);
+
+            const deltaEncodingLen = deltaHead.length + dataBuf.length + instBuf.length + addrBuf.length;
+
+            const winHead = [ 0x01 ]; // VCD_SOURCE
+            write7BitInt(winHead, sourceLen);
+            write7BitInt(winHead, sourceOffset);
+            write7BitInt(winHead, deltaEncodingLen);
+
+            const totalLen = winHead.length + deltaHead.length + dataBuf.length + instBuf.length + addrBuf.length;
+            const res = new Uint8Array(totalLen);
+            let ptr = 0;
+            res.set(winHead, ptr); ptr += winHead.length;
+            res.set(deltaHead, ptr); ptr += deltaHead.length;
+            res.set(dataBuf, ptr); ptr += dataBuf.length;
+            res.set(instBuf, ptr); ptr += instBuf.length;
+            res.set(addrBuf, ptr); ptr += addrBuf.length;
+            return res;
+          }
+
+          for (let w = 0; w < totalWindows; w++) {
+            const wStart = w * WIN_SIZE;
+            const wEnd = Math.min((w + 1) * WIN_SIZE, modFile.size);
+            const wLen = wEnd - wStart;
+            const srcLen = (wStart < origFile.size) ? Math.min(wLen, origFile.size - wStart) : 0;
+
+            const [oChunk, mChunk] = await Promise.all([
+              srcLen > 0 ? origFile.slice(wStart, wStart + srcLen).arrayBuffer() : new ArrayBuffer(0),
+              modFile.slice(wStart, wEnd).arrayBuffer()
+            ]);
+
+            const oU8 = new Uint8Array(oChunk);
+            const mU8 = new Uint8Array(mChunk);
+
+            let isIdentical = (srcLen === wLen);
+            if (isIdentical) {
+              const dv32O = new Uint32Array(oChunk);
+              const dv32M = new Uint32Array(mChunk);
+              const words = dv32O.length;
+              for (let k = 0; k < words; k++) {
+                if (dv32O[k] !== dv32M[k]) { isIdentical = false; break; }
+              }
+              if (isIdentical) {
+                for (let k = words * 4; k < wLen; k++) {
+                  if (oU8[k] !== mU8[k]) { isIdentical = false; break; }
+                }
+              }
+            }
+
+            if (isIdentical) {
+              winParts.push(buildVCDIFFWin(wStart, srcLen, wLen, [
+                { type: 'COPY', len: wLen, addr: 0 }
+              ]));
+            } else {
+              changedWindows++;
+              const ops = [];
+              let i = 0;
+              while (i < wLen) {
+                if (i < srcLen && oU8[i] === mU8[i]) {
+                  const matchStart = i;
+                  while (i < wLen && i < srcLen && oU8[i] === mU8[i]) i++;
+                  ops.push({ type: 'COPY', len: i - matchStart, addr: matchStart });
+                } else {
+                  const diffStart = i;
+                  while (i < wLen && (i >= srcLen || oU8[i] !== mU8[i])) i++;
+                  const diffLen = i - diffStart;
+                  totalDiffBytes += diffLen;
+                  ops.push({ type: 'ADD', data: mU8.subarray(diffStart, i) });
+                }
+              }
+              winParts.push(buildVCDIFFWin(wStart, srcLen, wLen, ops));
+            }
+
+            if (w % 8 === 0 || w === totalWindows - 1) {
+              const pct = 5 + Math.round((w / totalWindows) * 88);
+              setProgress('createFill', 'createPct', 'createLog', pct,
+                `Comparando xdelta: ${w + 1}/${totalWindows} janelas (${changedWindows} c/ alterações, ${fmtSize(totalDiffBytes)} delta)...`);
+              await sleep(0);
+            }
+          }
+
+          if (changedWindows === 0) {
+            throw new Error('Nenhuma diferença encontrada! As ISOs são idênticas.');
+          }
+
+          await log('Finalizando arquivo .xdelta...', 96);
+          const finalBlob = new Blob(winParts, { type: 'application/octet-stream' });
+          const patchSize = finalBlob.size;
+          const url = URL.createObjectURL(finalBlob);
+          const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.xdelta`;
+
+          await log('Patch .xdelta gerado com sucesso!', 100);
+
+          resultEl.className = 'result-card success visible';
+          resultEl.innerHTML = `
+            <div class="result-icon">🔺</div>
+            <div class="result-title">Patch xdelta3 Criado!</div>
+            <div class="result-stats">
+              <div class="stat-badge"><span class="stat-val">${changedWindows}</span><span class="stat-label">Janelas c/ Delta</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(totalDiffBytes)}</span><span class="stat-label">Bytes Modificados</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(patchSize)}</span><span class="stat-label">Tamanho .xdelta</span></div>
+              <div class="stat-badge"><span class="stat-val">${Math.round((1 - (patchSize / maxSize)) * 100)}%</span><span class="stat-label">Economia</span></div>
+            </div>
+            <div class="result-info">
+              <strong>${gameName}</strong> — ${patchName}<br>
+              ${author ? `Criado por: ${author}<br>` : ''}
+              Formato: <strong>xdelta3 padrão (RFC 3284 VCDIFF)</strong><br>
+              Compatível com ferramentas de PC (xdelta3 CLI, XDelta UI), Rom Patcher JS e emuladores.
+            </div>
+            <a class="dl-btn dl-btn-patch" style="background:linear-gradient(135deg, #0055cc, #0099ff);" href="${url}" download="${dlName}">
+              ⬇️ Baixar ${dlName}
+            </a>
+            <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
+          `;
+          btn.disabled = false;
+          return;
+        }
+
+        if (mode === 'file') {
+          await log('Analisando estrutura da ISO original...', 5);
+          const origIso = new ISO9660Reader(origFile);
+          await origIso.parse();
+
+          await log('Analisando estrutura da ISO modificada...', 10);
+          const modIso = new ISO9660Reader(modFile);
+          await modIso.parse();
+
+          const changedFiles = [];
+          const zip = new JSZip();
+          const filesFolder = zip.folder("files");
+
+          const paths = Object.keys(modIso.files);
+
+          for (let i = 0; i < paths.length; i++) {
+            const path = paths[i];
+            const mFile = modIso.files[path];
+            const oFile = origIso.files[path];
+
+            const pct = 15 + (i / paths.length) * 45;
+            if (i % 10 === 0) {
+              setProgress('createFill', 'createPct', 'createLog', pct, `Comparando: ${path}...`);
+              await sleep(0);
+            }
+
+            if (!oFile || oFile.size !== mFile.size) {
+              const mData = await modIso.readSector(mFile.lba, Math.ceil(mFile.size / 2048));
+              filesFolder.file(path, mData.subarray(0, mFile.size));
+              changedFiles.push({ path: path, size: mFile.size });
+              continue;
+            }
+
+            const numSec = Math.ceil(mFile.size / 2048);
+            let isDiff = false;
+            for (let s = 0; s < numSec; s += 32) {
+              const chunkCount = Math.min(32, numSec - s);
+              const oData = await origIso.readSector(oFile.lba + s, chunkCount);
+              const mData = await modIso.readSector(mFile.lba + s, chunkCount);
+              for (let b = 0; b < oData.length; b++) {
+                if (oData[b] !== mData[b]) {
+                  isDiff = true; break;
+                }
+              }
+              if (isDiff) break;
+            }
+
+            if (isDiff) {
+              const mData = await modIso.readSector(mFile.lba, numSec);
+              filesFolder.file(path, mData.subarray(0, mFile.size));
+              changedFiles.push({ path: path, size: mFile.size });
+            }
+          }
+
+          if (changedFiles.length === 0) {
+            throw new Error('Nenhuma diferença encontrada! As ISOs são idênticas.');
+          }
+
+          const metaObj = {
+            version: patchVersion,
+            game: gameName,
+            patchName,
+            author,
+            type: patchType,
+            iso: isoRegion,
+            language: patchLanguage,
+            originalHash: origHash,
+            originalSize: origFile.size,
+            modifiedSize: modFile.size,
+            changedFiles: changedFiles,
+            createdAt: new Date().toISOString()
+          };
+
+          zip.file("metadata.json", JSON.stringify(metaObj, null, 2));
+
+          await log('Gerando arquivo .gpatch (Comprimindo zip, pode demorar)...', 70);
+
+          const finalBlob = await zip.generateAsync({
+            type: "blob",
+            compression: "DEFLATE",
+            compressionOptions: { level: 6 }
+          }, (metadata) => {
+            setProgress('createFill', 'createPct', 'createLog', 70 + metadata.percent * 0.3, `Comprimindo Zip: ${metadata.percent.toFixed(1)}%...`);
+          });
+
+          const patchSize = finalBlob.size;
+          const url = URL.createObjectURL(finalBlob);
+          const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.gpatch`;
+
+          await log('Patch Arquivo gerado!', 100);
+
+          resultEl.className = 'result-card success visible';
+          resultEl.innerHTML = `
+            <div class="result-icon">📦</div>
+            <div class="result-title">Patch Modo Arquivo Criado!</div>
+            <div class="result-stats">
+              <div class="stat-badge"><span class="stat-val">${changedFiles.length}</span><span class="stat-label">Arquivos</span></div>
+              <div class="stat-badge"><span class="stat-val">${fmtSize(patchSize)}</span><span class="stat-label">Tamanho</span></div>
+            </div>
+            <div class="result-info">
+              <strong>${gameName}</strong> — ${patchName}<br>
+              ${author ? `Criado por: ${author}<br>` : ''}
+              Formato: Arquivos Soltos (JSZip)
+            </div>
+            <a class="dl-btn dl-btn-patch" href="${url}" download="${dlName}">
+              ⬇️ Baixar ${dlName}
+            </a>
+            <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
+          `;
+          btn.disabled = false;
+          return;
+        }
+
+        // Lógica do Modo Binário (v3)
+        const SECTOR = 2048;
+        const maxSize = Math.max(origFile.size, modFile.size);
+        const minSize = Math.min(origFile.size, modFile.size);
+        const totalSectors = Math.ceil(maxSize / SECTOR);
+        const commonSectors = Math.floor(minSize / SECTOR);
+
+        if (origFile.size !== modFile.size) {
+          await log(`ISOs com tamanhos diferentes (${fmtSize(origFile.size)} vs ${fmtSize(modFile.size)}), comparando...`, 5, 'warn');
+        }
+
+        // Compara setor a setor E extrai runs de bytes diferentes
+        const sectorEntries = []; // [{idx, runs: [{o, l, d}]}]
+        let totalRunBytes = 0;
+        const BATCH = 512; // 1MB por lote
+        const MERGE_GAP = 16;
+
+        for (let start = 0; start < commonSectors; start += BATCH) {
+          const end = Math.min(start + BATCH, commonSectors);
+          const byteStart = start * SECTOR;
+          const byteEnd = end * SECTOR;
+
+          const [origChunk, modChunk] = await Promise.all([
+            origFile.slice(byteStart, Math.min(byteEnd, origFile.size)).arrayBuffer(),
+            modFile.slice(byteStart, Math.min(byteEnd, modFile.size)).arrayBuffer()
+          ]);
+
+          const origU8 = new Uint8Array(origChunk);
+          const modU8 = new Uint8Array(modChunk);
+
+          for (let s = 0; s < end - start; s++) {
+            const off = s * SECTOR;
+            let differs = false;
+            const origDV = new DataView(origChunk, off, SECTOR);
+            const modDV = new DataView(modChunk, off, SECTOR);
+            for (let b = 0; b < SECTOR; b += 4) {
+              if (origDV.getUint32(b) !== modDV.getUint32(b)) { differs = true; break; }
+            }
+            if (!differs) continue;
+
+            const runs = [];
+            let i = 0;
+            while (i < SECTOR) {
+              while (i < SECTOR && origU8[off + i] === modU8[off + i]) i++;
+              if (i >= SECTOR) break;
+
+              const runStart = i;
+              while (i < SECTOR && origU8[off + i] !== modU8[off + i]) i++;
+
+              while (i < SECTOR) {
+                let gap = 0;
+                while (i + gap < SECTOR && origU8[off + i + gap] === modU8[off + i + gap]) gap++;
+                if (gap > MERGE_GAP || i + gap >= SECTOR) break;
+                i += gap;
+                while (i < SECTOR && origU8[off + i] !== modU8[off + i]) i++;
+              }
+
+              const runLen = i - runStart;
+              if (runLen > SECTOR - 32) {
+                runs.length = 0;
+                runs.push({ o: 0, l: SECTOR, d: modU8.slice(off, off + SECTOR) });
+                totalRunBytes += SECTOR;
+                break;
+              }
+              runs.push({ o: runStart, l: runLen, d: modU8.slice(off + runStart, off + runStart + runLen) });
+              totalRunBytes += runLen;
+            }
+            if (runs.length > 0) {
+              sectorEntries.push({ idx: start + s, runs });
+            }
+          }
+
+          const pct = 5 + (end / totalSectors) * 50;
+          setProgress('createFill', 'createPct', 'createLog', pct,
+            `Comparando: ${end}/${totalSectors} (${sectorEntries.length} setores, ${fmtSize(totalRunBytes)} delta)`);
+          await sleep(0);
+        }
+
+        if (modFile.size > origFile.size) {
+          for (let start = commonSectors; start < totalSectors; start += BATCH) {
+            const end = Math.min(start + BATCH, totalSectors);
+            const byteStart = start * SECTOR;
+            const byteEnd = Math.min(end * SECTOR, modFile.size);
+            const chunk = await modFile.slice(byteStart, byteEnd).arrayBuffer();
+            const modU8 = new Uint8Array(chunk);
+            for (let s = 0; s < end - start; s++) {
+              const off = s * SECTOR;
+              const len = Math.min(SECTOR, modU8.length - off);
+              sectorEntries.push({
+                idx: start + s,
+                runs: [{ o: 0, l: len, d: modU8.slice(off, off + len) }]
+              });
+              totalRunBytes += len;
+            }
+          }
+        }
+
+        if (sectorEntries.length === 0) {
+          throw new Error('Nenhuma diferença encontrada! As ISOs são idênticas.');
+        }
+
+        const metaObj = {
+          version: patchVersion,
+          game: gameName,
+          patchName,
+          author,
+          type: patchType,
+          iso: isoRegion,
+          language: patchLanguage,
+          originalHash: origHash,
+          originalSize: origFile.size,
+          modifiedSize: modFile.size,
+          changedSectors: sectorEntries.length,
+          totalDeltaBytes: totalRunBytes,
+          compressed: true,
+          createdAt: new Date().toISOString()
+        };
+        const metaBytes = new TextEncoder().encode(JSON.stringify(metaObj));
+
+        await log(`${sectorEntries.length} setores, ${fmtSize(totalRunBytes)} de deltas — preparando...`, 56);
+
+        let rawSize = 4;
+        for (const entry of sectorEntries) {
+          rawSize += 6;
+          for (const r of entry.runs) rawSize += 4 + r.l;
+        }
+
+        await log(`Serializando e Comprimindo ${fmtSize(rawSize)} de dados brutos...`, 58);
+
+        let compressedChunks = [];
+        let totalCompLen = 0;
+        let isCompressed = true;
+
+        try {
+          const cs = new CompressionStream('deflate');
+          const writer = cs.writable.getWriter();
+          const reader = cs.readable.getReader();
+
+          const readPromise = (async () => {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              compressedChunks.push(value);
+              totalCompLen += value.length;
+            }
+          })();
+
+          const writePromise = (async () => {
+            const numSectorsBuf = new Uint8Array(4);
+            new DataView(numSectorsBuf.buffer).setUint32(0, sectorEntries.length, true);
+            await writer.write(numSectorsBuf);
+
+            let bytesWritten = 4;
+            let currentChunk = new Uint8Array(4 * 1024 * 1024);
+            let chunkOff = 0;
+
+            const flush = async () => {
+              if (chunkOff > 0) {
+                await writer.write(currentChunk.subarray(0, chunkOff));
+                currentChunk = new Uint8Array(4 * 1024 * 1024);
+                chunkOff = 0;
+              }
+            };
+
+            for (let j = 0; j < sectorEntries.length; j++) {
+              const entry = sectorEntries[j];
+              let entryRawSize = 6;
+              for (const r of entry.runs) entryRawSize += 4 + r.l;
+              
+              if (chunkOff + entryRawSize > currentChunk.length) {
+                await flush();
+                if (entryRawSize > currentChunk.length) {
+                  currentChunk = new Uint8Array(entryRawSize + 4 * 1024 * 1024);
+                }
+              }
+
+              const entryDv = new DataView(currentChunk.buffer, currentChunk.byteOffset + chunkOff);
+              let wp = 0;
+              entryDv.setUint32(wp, entry.idx, true); wp += 4;
+              entryDv.setUint16(wp, entry.runs.length, true); wp += 2;
+              for (const r of entry.runs) {
+                entryDv.setUint16(wp, r.o, true); wp += 2;
+                entryDv.setUint16(wp, r.l, true); wp += 2;
+                currentChunk.set(r.d, chunkOff + wp); wp += r.l;
+              }
+              chunkOff += entryRawSize;
+              bytesWritten += entryRawSize;
+
+              if (j % 10000 === 0 && j > 0) {
+                setProgress('createFill', 'createPct', 'createLog', 58 + (bytesWritten / rawSize) * 34,
+                  `Processando: ${Math.round((bytesWritten / rawSize) * 100)}%...`);
+                await sleep(0);
+              }
+            }
+            await flush();
+            await writer.close();
+          })();
+
+          await Promise.all([writePromise, readPromise]);
+          metaObj.compressed = true;
+          
+        } catch (compErr) {
+          console.warn('CompressionStream falhou, salvando raw:', compErr);
+          isCompressed = false;
+          metaObj.compressed = false;
+          compressedChunks = [];
+          totalCompLen = rawSize;
+          
+          const numSectorsBuf = new Uint8Array(4);
+          new DataView(numSectorsBuf.buffer).setUint32(0, sectorEntries.length, true);
+          compressedChunks.push(numSectorsBuf);
+          
+          let currentChunk = new Uint8Array(4 * 1024 * 1024);
+          let chunkOff = 0;
+          let bytesWritten = 4;
+          
+          const flush = () => {
+            if (chunkOff > 0) {
+              compressedChunks.push(currentChunk.slice(0, chunkOff));
+              currentChunk = new Uint8Array(4 * 1024 * 1024);
+              chunkOff = 0;
+            }
+          };
+
+          for (let j = 0; j < sectorEntries.length; j++) {
+            const entry = sectorEntries[j];
+            let entryRawSize = 6;
+            for (const r of entry.runs) entryRawSize += 4 + r.l;
+            
+            if (chunkOff + entryRawSize > currentChunk.length) {
+              flush();
+              if (entryRawSize > currentChunk.length) {
+                currentChunk = new Uint8Array(entryRawSize + 4 * 1024 * 1024);
+              }
+            }
+            
+            const entryDv = new DataView(currentChunk.buffer, currentChunk.byteOffset + chunkOff);
+            let wp = 0;
+            entryDv.setUint32(wp, entry.idx, true); wp += 4;
+            entryDv.setUint16(wp, entry.runs.length, true); wp += 2;
+            for (const r of entry.runs) {
+              entryDv.setUint16(wp, r.o, true); wp += 2;
+              entryDv.setUint16(wp, r.l, true); wp += 2;
+              currentChunk.set(r.d, chunkOff + wp); wp += r.l;
+            }
+            chunkOff += entryRawSize;
+            bytesWritten += entryRawSize;
+            
+            if (j % 10000 === 0 && j > 0) {
+              setProgress('createFill', 'createPct', 'createLog', 58 + (bytesWritten / rawSize) * 34,
+                `Serializando: ${Math.round((bytesWritten / rawSize) * 100)}%...`);
+              await sleep(0);
+            }
+          }
+          flush();
+        }
+
+        sectorEntries.length = 0; // free memory
+
+        const compressionRatio = isCompressed ? ((1 - totalCompLen / rawSize) * 100).toFixed(1) : 0;
+        await log(`Pronto: ${fmtSize(rawSize)} → ${fmtSize(totalCompLen)} (${compressionRatio}% redução)`, 92);
+
+        const hdrSize = 8 + metaBytes.length + 4;
+        const hdrBuf = new ArrayBuffer(hdrSize);
+        const hdrU8 = new Uint8Array(hdrBuf);
+        const hdrDv = new DataView(hdrBuf);
+        hdrU8[0] = 0x47; // G
+        hdrU8[1] = 0x50; // P
+        hdrU8[2] = 0x03; // version 3
+        hdrU8[3] = metaObj.compressed ? 0x01 : 0x00;
+        hdrDv.setUint32(4, metaBytes.length, true);
+        hdrU8.set(metaBytes, 8);
+        hdrDv.setUint32(8 + metaBytes.length, rawSize, true);
+
+        const finalBlob = new Blob([hdrBuf, ...compressedChunks], { type: 'application/octet-stream' });
+        const patchSize = finalBlob.size;
+        const url = URL.createObjectURL(finalBlob);
+        const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.gpatch`;
+
+        await log('Patch gerado!', 100);
+
+        resultEl.className = 'result-card success visible';
+        resultEl.innerHTML = `
+          <div class="result-icon">⚡</div>
+          <div class="result-title">Patch (Sparse Delta) Criado!</div>
+          <div class="result-stats">
+            <div class="stat-badge"><span class="stat-val">${metaObj.changedSectors}</span><span class="stat-label">Setores</span></div>
+            <div class="stat-badge"><span class="stat-val">${fmtSize(totalRunBytes)}</span><span class="stat-label">Delta Bruto</span></div>
+            <div class="stat-badge"><span class="stat-val">${fmtSize(patchSize)}</span><span class="stat-label">Patch Final</span></div>
+            <div class="stat-badge"><span class="stat-val">${Math.round((1 - (patchSize / maxSize)) * 100)}%</span><span class="stat-label">Redução</span></div>
+          </div>
+          <div class="result-info">
+            <strong>${gameName}</strong> — ${patchName}<br>
+            ${author ? `Criado por: ${author}<br>` : ''}
+            Formato GPatch · Compressão DEFLATE
+          </div>
+          <a class="dl-btn dl-btn-patch" href="${url}" download="${dlName}">
+            ⬇️ Baixar ${dlName}
+          </a>
+          <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
+        `;
+        btn.disabled = false;
+        return;
+
+      } catch (err) {
+        await log(err.message, 100, 'err');
+        resultEl.className = 'result-card error visible';
+        resultEl.innerHTML = `
+      <div class="result-icon">❌</div>
+      <div class="result-title">Erro!</div>
+      <div class="result-info">${err.message}</div>
+      <button class="retry-btn" onclick="resetCreate()">Tentar novamente</button>
+    `;
+        btn.disabled = false;
+      }
+    }
+
+    function resetCreate() {
+      state.createOrig = null;
+      state.createMod = null;
+      ['dzCreateOrig', 'dzCreateMod'].forEach((id, i) => {
+        const dz = document.getElementById(id);
+        dz.classList.remove('file-loaded');
+        dz.innerHTML = `
+      <input type="file" accept=".iso,.bin,.img" onchange="loadFile('${i === 0 ? 'createOrig' : 'createMod'}',this)">
+      <div class="dz-icon">${i === 0 ? '💿' : '🎙️'}</div>
+      <div class="dz-text"><strong>Toque para selecionar</strong><br>${i === 0 ? 'ISO original do jogo' : 'ISO com dublagem'}</div>
+      <div class="dz-tag">.ISO · .BIN · .IMG</div>
+    `;
+      });
+      resetResult('create');
+      checkButtons();
+    }
+
+    // ═══════════════════════════════════════════════
+    //  DRAG & DROP
+    // ═══════════════════════════════════════════════
+    document.querySelectorAll('.drop-zone').forEach(dz => {
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault();
+        dz.classList.remove('drag-over');
+        const input = dz.querySelector('input[type=file]');
+        if (input && e.dataTransfer.files.length) {
+          const dt = new DataTransfer();
+          dt.items.add(e.dataTransfer.files[0]);
+          input.files = dt.files;
+          input.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+
+    // ═══════════════════════════════════════════════
+    //  LOAD PRESETS FROM JSON
+    // ═══════════════════════════════════════════════
+    async function loadPresetsFromJSON() {
+      const gallery = document.getElementById('presetsGallery');
+      try {
+        const params = new URLSearchParams(location.search);
+        const presetsUrl = params.get('presets') || 'https://huggingface.co/datasets/RafaG/godoy/raw/main/presets.json';
+        const res = await fetch(presetsUrl);
+        const presets = await res.json();
+        gallery.innerHTML = '';
+        if (!presets.length) {
+          gallery.innerHTML = '<div style="font-size:10px;color:var(--text2);padding:12px">Nenhum patch disponível no momento.</div>';
+          return;
+        }
+        for (const p of presets) {
+          const card = document.createElement('div');
+          card.className = 'preset-card';
+          card.onclick = () => selectPreset(p);
+          let typeTag = '';
+          if (p.type) {
+            const mainType = p.type.split(',')[0].trim();
+            if (mainType.toLowerCase() === 'dublado') typeTag = '<span class="preset-tag tag-dub">Dublado</span>';
+            else typeTag = `<span class="preset-tag tag-sub">${mainType}</span>`;
+          }
+          const isoTag = p.iso ? `<span class="preset-tag tag-iso">${p.iso}</span>` : '';
+          const sizeTag = p.size ? `<span class="preset-tag tag-size">${p.size}</span>` : '';
+          card.innerHTML = `
+            <img class="preset-img" src="${p.image}" alt="${p.name}" onerror="this.src='https://via.placeholder.com/110x140/080c1a/00d4ff?text=Img'">
+            <div class="preset-info">
+              <div class="preset-name">${p.name}</div>
+              <div class="preset-tags">${typeTag}${isoTag}${sizeTag}</div>
+            </div>
+          `;
+          gallery.appendChild(card);
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar presets.json:', e);
+        gallery.innerHTML = '<div style="font-size:10px;color:var(--red);padding:12px">Erro ao carregar presets</div>';
+      }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  INIT
+    // ═══════════════════════════════════════════════
+    checkURLParams();
+    loadPresetsFromJSON();
+    checkURLPatch();
+  </script>
+</body>
+</html>
