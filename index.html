@@ -701,6 +701,7 @@
     .dl-btn {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
       padding: 14px 28px;
       border: none;
@@ -710,6 +711,8 @@
       font-weight: 700;
       font-size: 13px;
       text-decoration: none;
+      outline: none;
+      box-sizing: border-box;
       transition: all 0.2s;
     }
 
@@ -1765,6 +1768,97 @@
   `;
     }
 
+    let currentDownloadBlob = null;
+    let currentDownloadName = '';
+
+    async function saveCurrentFile(btnEl) {
+      if (!currentDownloadBlob) return;
+      const blob = currentDownloadBlob;
+      const filename = currentDownloadName || 'arquivo_modificado.iso';
+      const originalHtml = btnEl ? btnEl.innerHTML : '';
+
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.style.opacity = '0.7';
+        btnEl.innerHTML = '💾 Gravando no dispositivo...';
+      }
+
+      try {
+        // 1. Tentar File System Access API (showSaveFilePicker)
+        // Suportado nativamente no Chrome Desktop e Chrome Android 132+
+        // Salva direto no armazenamento selecionado pelo usuário sem passar pelo IPC do Download Manager
+        if (typeof window.showSaveFilePicker === 'function') {
+          try {
+            const ext = filename.split('.').pop().toLowerCase();
+            const handle = await window.showSaveFilePicker({
+              suggestedName: filename,
+              types: [{
+                description: ext.toUpperCase() + ' File',
+                accept: { 'application/octet-stream': ['.' + ext] }
+              }]
+            });
+            const writable = await handle.createWritable();
+            if (blob.stream && writable.write) {
+              await blob.stream().pipeTo(writable);
+            } else {
+              await writable.write(blob);
+              await writable.close();
+            }
+
+            if (btnEl) {
+              btnEl.innerHTML = '✅ Salvo com sucesso!';
+              setTimeout(() => {
+                btnEl.disabled = false;
+                btnEl.style.opacity = '1';
+                btnEl.innerHTML = originalHtml;
+              }, 3000);
+            }
+            return;
+          } catch (pickerErr) {
+            if (pickerErr.name === 'AbortError') {
+              // Usuário cancelou a janela de salvar
+              if (btnEl) {
+                btnEl.disabled = false;
+                btnEl.style.opacity = '1';
+                btnEl.innerHTML = originalHtml;
+              }
+              return;
+            }
+            console.warn('showSaveFilePicker falhou, tentando fallback com URL:', pickerErr);
+          }
+        }
+
+        // 2. Fallback: <a download> com URL.createObjectURL
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 120000);
+
+        if (btnEl) {
+          btnEl.innerHTML = '✅ Download iniciado!';
+          setTimeout(() => {
+            btnEl.disabled = false;
+            btnEl.style.opacity = '1';
+            btnEl.innerHTML = originalHtml;
+          }, 3000);
+        }
+      } catch (err) {
+        console.error('Erro ao salvar arquivo:', err);
+        alert('Erro ao transferir arquivo: ' + err.message);
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.style.opacity = '1';
+          btnEl.innerHTML = originalHtml;
+        }
+      }
+    }
+
     function checkButtons() {
       const btnApply = document.getElementById('btnRunApply');
       const btnCreate = document.getElementById('btnRunCreate');
@@ -1773,6 +1867,8 @@
     }
 
     function resetResult(mode) {
+      currentDownloadBlob = null;
+      currentDownloadName = '';
       document.getElementById(mode + 'Result').className = 'result-card';
       document.getElementById(mode + 'Result').innerHTML = '';
       document.getElementById(mode + 'Progress').classList.remove('visible');
@@ -2191,9 +2287,10 @@
           await sleep(50);
 
           const blob = new Blob(outputChunks, { type: 'application/octet-stream' });
-          const url = URL.createObjectURL(blob);
           const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
           const dlName = `${origName}_patched.iso`;
+          currentDownloadBlob = blob;
+          currentDownloadName = dlName;
 
           await log('Concluído!', 100);
 
@@ -2210,9 +2307,9 @@
               Patch padrão de mercado .xdelta aplicado com sucesso via WebAssembly.<br>
               ISO pronta para uso no emulador ou console PS2.
             </div>
-            <a class="dl-btn dl-btn-iso" href="${url}" download="${dlName}">
+            <button type="button" class="dl-btn dl-btn-iso" onclick="saveCurrentFile(this)">
               ⬇️ Baixar ${dlName}
-            </a>
+            </button>
             <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
           `;
           return;
@@ -2332,6 +2429,35 @@
           }
           const blobParts = [];
           let sliceStart = null;
+          let pendingModified = [];
+
+          const flushModified = () => {
+            if (pendingModified.length === 0) return;
+            if (pendingModified.length === 1) {
+              blobParts.push(pendingModified[0]);
+            } else {
+              let totalBytes = 0;
+              for (let i = 0; i < pendingModified.length; i++) totalBytes += pendingModified[i].length;
+              const CHUNK_LIMIT = 4 * 1024 * 1024; // agrupa setores modificados em blocos de 4MB
+              let chunk = new Uint8Array(Math.min(totalBytes, CHUNK_LIMIT));
+              let chunkOff = 0;
+              for (let i = 0; i < pendingModified.length; i++) {
+                const part = pendingModified[i];
+                if (chunkOff + part.length > chunk.length) {
+                  blobParts.push(chunk.subarray(0, chunkOff));
+                  totalBytes -= chunkOff;
+                  chunk = new Uint8Array(Math.min(totalBytes, CHUNK_LIMIT));
+                  chunkOff = 0;
+                }
+                chunk.set(part, chunkOff);
+                chunkOff += part.length;
+              }
+              if (chunkOff > 0) {
+                blobParts.push(chunk.subarray(0, chunkOff));
+              }
+            }
+            pendingModified = [];
+          };
 
           for (let lba = 0; lba < maxSector; lba++) {
             if (sectorPatches.has(lba)) {
@@ -2347,8 +2473,9 @@
               for (const run of sectorPatches.get(lba)) {
                 patched.set(run.d, run.o);
               }
-              blobParts.push(patched);
+              pendingModified.push(patched);
             } else {
+              flushModified();
               if (sliceStart === null) sliceStart = lba;
             }
             if (lba % 50000 === 0 && lba > 0) {
@@ -2356,6 +2483,7 @@
               await sleep(0);
             }
           }
+          flushModified();
           if (sliceStart !== null) {
             blobParts.push(origFile.slice(sliceStart * SECTOR, origFile.size));
           }
@@ -2364,9 +2492,10 @@
           await sleep(60);
 
           const blob = new Blob(blobParts, { type: 'application/octet-stream' });
-          const url = URL.createObjectURL(blob);
           const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
           const dlName = `${origName}_patched.iso`;
+          currentDownloadBlob = blob;
+          currentDownloadName = dlName;
 
           await log('Concluído!', 100);
 
@@ -2384,9 +2513,9 @@
               ${meta.author ? `Por: ${meta.author}<br>` : ''}
               ISO pronta para uso.
             </div>
-            <a class="dl-btn dl-btn-iso" href="${url}" download="${dlName}">
+            <button type="button" class="dl-btn dl-btn-iso" onclick="saveCurrentFile(this)">
               ⬇️ Baixar ${dlName}
-            </a>
+            </button>
             <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
           `;
           return;
@@ -2488,9 +2617,38 @@
 
         await log('Montando ISO Final na Memória Virtual...', 80);
 
-        // Build BlobParts
+        // Build BlobParts com consolidação de blocos para evitar fragmentação no Android
         const blobParts = [];
         let currentSliceStartLBA = null;
+        let pendingModified = [];
+
+        const flushModified = () => {
+          if (pendingModified.length === 0) return;
+          if (pendingModified.length === 1) {
+            blobParts.push(pendingModified[0]);
+          } else {
+            let totalBytes = 0;
+            for (let i = 0; i < pendingModified.length; i++) totalBytes += pendingModified[i].length;
+            const CHUNK_LIMIT = 4 * 1024 * 1024; // agrupa em blocos de até 4MB
+            let chunk = new Uint8Array(Math.min(totalBytes, CHUNK_LIMIT));
+            let chunkOff = 0;
+            for (let i = 0; i < pendingModified.length; i++) {
+              const part = pendingModified[i];
+              if (chunkOff + part.length > chunk.length) {
+                blobParts.push(chunk.subarray(0, chunkOff));
+                totalBytes -= chunkOff;
+                chunk = new Uint8Array(Math.min(totalBytes, CHUNK_LIMIT));
+                chunkOff = 0;
+              }
+              chunk.set(part, chunkOff);
+              chunkOff += part.length;
+            }
+            if (chunkOff > 0) {
+              blobParts.push(chunk.subarray(0, chunkOff));
+            }
+          }
+          pendingModified = [];
+        };
 
         for (let lba = 0; lba < origSectors; lba++) {
           if (sectorOverrides.has(lba)) {
@@ -2498,13 +2656,15 @@
               blobParts.push(origFile.slice(currentSliceStartLBA * 2048, lba * 2048));
               currentSliceStartLBA = null;
             }
-            blobParts.push(sectorOverrides.get(lba));
+            pendingModified.push(sectorOverrides.get(lba));
           } else {
+            flushModified();
             if (currentSliceStartLBA === null) {
               currentSliceStartLBA = lba;
             }
           }
         }
+        flushModified();
         if (currentSliceStartLBA !== null) {
           blobParts.push(origFile.slice(currentSliceStartLBA * 2048, origSectors * 2048));
         }
@@ -2518,9 +2678,10 @@
         await sleep(60);
 
         const blob = new Blob(blobParts, { type: 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
         const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
         const dlName = `${origName}_dubbed.iso`;
+        currentDownloadBlob = blob;
+        currentDownloadName = dlName;
 
         await log('Concluído!', 100, '');
 
@@ -2539,9 +2700,9 @@
         ${meta.author ? `Por: ${meta.author}<br>` : ''}
         ISO pronta para uso.
       </div>
-      <a class="dl-btn dl-btn-iso" href="${url}" download="${dlName}">
+      <button type="button" class="dl-btn dl-btn-iso" onclick="saveCurrentFile(this)">
         ⬇️ Baixar ${dlName}
-      </a>
+      </button>
       <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
     `;
 
@@ -2768,8 +2929,9 @@
           await log('Finalizando arquivo .xdelta...', 96);
           const finalBlob = new Blob(winParts, { type: 'application/octet-stream' });
           const patchSize = finalBlob.size;
-          const url = URL.createObjectURL(finalBlob);
           const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.xdelta`;
+          currentDownloadBlob = finalBlob;
+          currentDownloadName = dlName;
 
           await log('Patch .xdelta gerado com sucesso!', 100);
 
@@ -2789,9 +2951,9 @@
               Formato: <strong>xdelta3 padrão (RFC 3284 VCDIFF)</strong><br>
               Compatível com ferramentas de PC (xdelta3 CLI, XDelta UI), Rom Patcher JS e emuladores.
             </div>
-            <a class="dl-btn dl-btn-patch" style="background:linear-gradient(135deg, #0055cc, #0099ff);" href="${url}" download="${dlName}">
+            <button type="button" class="dl-btn dl-btn-patch" style="background:linear-gradient(135deg, #0055cc, #0099ff);" onclick="saveCurrentFile(this)">
               ⬇️ Baixar ${dlName}
-            </a>
+            </button>
             <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
           `;
           btn.disabled = false;
@@ -2885,8 +3047,9 @@
           });
 
           const patchSize = finalBlob.size;
-          const url = URL.createObjectURL(finalBlob);
           const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.gpatch`;
+          currentDownloadBlob = finalBlob;
+          currentDownloadName = dlName;
 
           await log('Patch Arquivo gerado!', 100);
 
@@ -2903,9 +3066,9 @@
               ${author ? `Criado por: ${author}<br>` : ''}
               Formato: Arquivos Soltos (JSZip)
             </div>
-            <a class="dl-btn dl-btn-patch" href="${url}" download="${dlName}">
+            <button type="button" class="dl-btn dl-btn-patch" onclick="saveCurrentFile(this)">
               ⬇️ Baixar ${dlName}
-            </a>
+            </button>
             <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
           `;
           btn.disabled = false;
@@ -3188,8 +3351,9 @@
 
         const finalBlob = new Blob([hdrBuf, ...compressedChunks], { type: 'application/octet-stream' });
         const patchSize = finalBlob.size;
-        const url = URL.createObjectURL(finalBlob);
         const dlName = `${gameName.replace(/\s+/g, '_')}_${patchName.replace(/\s+/g, '_')}${author ? '_' + author.replace(/\s+/g, '_') : ''}.gpatch`;
+        currentDownloadBlob = finalBlob;
+        currentDownloadName = dlName;
 
         await log('Patch gerado!', 100);
 
@@ -3208,9 +3372,9 @@
             ${author ? `Criado por: ${author}<br>` : ''}
             Formato GPatch · Compressão DEFLATE
           </div>
-          <a class="dl-btn dl-btn-patch" href="${url}" download="${dlName}">
+          <button type="button" class="dl-btn dl-btn-patch" onclick="saveCurrentFile(this)">
             ⬇️ Baixar ${dlName}
-          </a>
+          </button>
           <button class="retry-btn" onclick="resetCreate()">Criar outro patch</button>
         `;
         btn.disabled = false;
