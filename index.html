@@ -992,8 +992,13 @@
     }
 
     @keyframes modalSlide {
-      from { transform: translateY(16px) scale(0.97); }
-      to { transform: translateY(0) scale(1); }
+      from {
+        transform: translateY(16px) scale(0.97);
+      }
+
+      to {
+        transform: translateY(0) scale(1);
+      }
     }
 
     .modal-header {
@@ -1446,12 +1451,14 @@
 
         <div class="embed-option-group">
           <label class="embed-label" for="embedPresetsUrl">URL de Presets Personalizada (Opcional)</label>
-          <input type="text" id="embedPresetsUrl" class="embed-input" placeholder="https://exemplo.com/meus-presets.json" oninput="updateEmbedCode()">
+          <input type="text" id="embedPresetsUrl" class="embed-input"
+            placeholder="https://exemplo.com/meus-presets.json" oninput="updateEmbedCode()">
         </div>
 
         <div class="embed-option-group">
           <label class="embed-label" for="embedPatchUrl">URL do Patch pré-carregado (Opcional)</label>
-          <input type="text" id="embedPatchUrl" class="embed-input" placeholder="https://exemplo.com/meu-patch.gpatch" oninput="updateEmbedCode()">
+          <input type="text" id="embedPatchUrl" class="embed-input" placeholder="https://exemplo.com/meu-patch.gpatch"
+            oninput="updateEmbedCode()">
         </div>
 
         <div class="embed-option-group">
@@ -2875,7 +2882,7 @@
 
             const deltaEncodingLen = deltaHead.length + dataBuf.length + instBuf.length + addrBuf.length;
 
-            const winHead = [ 0x01 ]; // VCD_SOURCE
+            const winHead = [0x01]; // VCD_SOURCE
             write7BitInt(winHead, sourceLen);
             write7BitInt(winHead, sourceOffset);
             write7BitInt(winHead, deltaEncodingLen);
@@ -3273,7 +3280,7 @@
               const entry = sectorEntries[j];
               let entryRawSize = 6;
               for (const r of entry.runs) entryRawSize += 4 + r.l;
-              
+
               if (chunkOff + entryRawSize > currentChunk.length) {
                 await flush();
                 if (entryRawSize > currentChunk.length) {
@@ -3305,22 +3312,22 @@
 
           await Promise.all([writePromise, readPromise]);
           metaObj.compressed = true;
-          
+
         } catch (compErr) {
           console.warn('CompressionStream falhou, salvando raw:', compErr);
           isCompressed = false;
           metaObj.compressed = false;
           compressedChunks = [];
           totalCompLen = rawSize;
-          
+
           const numSectorsBuf = new Uint8Array(4);
           new DataView(numSectorsBuf.buffer).setUint32(0, sectorEntries.length, true);
           compressedChunks.push(numSectorsBuf);
-          
+
           let currentChunk = new Uint8Array(4 * 1024 * 1024);
           let chunkOff = 0;
           let bytesWritten = 4;
-          
+
           const flush = () => {
             if (chunkOff > 0) {
               compressedChunks.push(currentChunk.slice(0, chunkOff));
@@ -3333,14 +3340,14 @@
             const entry = sectorEntries[j];
             let entryRawSize = 6;
             for (const r of entry.runs) entryRawSize += 4 + r.l;
-            
+
             if (chunkOff + entryRawSize > currentChunk.length) {
               flush();
               if (entryRawSize > currentChunk.length) {
                 currentChunk = new Uint8Array(entryRawSize + 4 * 1024 * 1024);
               }
             }
-            
+
             const entryDv = new DataView(currentChunk.buffer, currentChunk.byteOffset + chunkOff);
             let wp = 0;
             entryDv.setUint32(wp, entry.idx, true); wp += 4;
@@ -3352,7 +3359,7 @@
             }
             chunkOff += entryRawSize;
             bytesWritten += entryRawSize;
-            
+
             if (j % 10000 === 0 && j > 0) {
               setProgress('createFill', 'createPct', 'createLog', 58 + (bytesWritten / rawSize) * 34,
                 `Serializando: ${Math.round((bytesWritten / rawSize) * 100)}%...`);
@@ -3520,4 +3527,5 @@
     checkURLPatch();
   </script>
 </body>
+
 </html>
