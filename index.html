@@ -1880,9 +1880,9 @@
             btnEl.parentNode.insertBefore(errBox, btnEl.nextSibling);
           }
           errBox.style.cssText = 'margin-top: 12px; padding: 12px; background: rgba(255, 50, 80, 0.12); border: 1px solid rgba(255, 50, 80, 0.35); border-radius: 8px; font-size: 11px; color: #ff8095; line-height: 1.5; text-align: center;';
-          errBox.innerHTML = `❌ <strong>Falha ao gravar arquivo:</strong> ${err.message}<br>📸 <em>Tire um print desta tela e envie para mim (Rafael Godoy) para eu te ajudar!</em>`;
+          errBox.innerHTML = `❌ <strong>Falha ao gravar arquivo:</strong> ${err.message}<br>📸 <em>Tire uma screenshot desta tela e envie no servidor para analisarmos o que aconteceu!</em>`;
         } else {
-          alert('Erro ao transferir arquivo: ' + err.message + '\n\nPor favor, tire um print desta tela e envie para mim (Rafael Godoy)!');
+          alert('Erro ao transferir arquivo: ' + err.message + '\n\nPor favor, tire uma screenshot e envie no servidor para analisarmos o que aconteceu!');
         }
       }
     }
@@ -2339,7 +2339,7 @@
               ⬇️ Baixar ${dlName}
             </button>
             <div style="margin-top: 10px; font-size: 10px; color: var(--text2); opacity: 0.85; text-align: center;">
-              💡 <em>Se o download não iniciar ou der erro no seu aparelho, tire um print desta tela e me envie!</em>
+              💡 <em>Se o download não iniciar ou der erro no seu aparelho, tire uma screenshot e envie no servidor!</em>
             </div>
             <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
           `;
@@ -2416,6 +2416,11 @@
               dataU8.set(c, dOff);
               dOff += c.length;
             }
+            decompChunks.length = 0;
+            patchBuf = null;
+            if (state.applyPatch) state.applyPatch.buffer = null;
+            preloadedPatchBuffer = null;
+
             dataDv = new DataView(dataU8.buffer);
             dataOffset = 0;
 
@@ -2548,7 +2553,7 @@
               ⬇️ Baixar ${dlName}
             </button>
             <div style="margin-top: 10px; font-size: 10px; color: var(--text2); opacity: 0.85; text-align: center;">
-              💡 <em>Se o download não iniciar ou der erro no seu aparelho, tire um print desta tela e me envie!</em>
+              💡 <em>Se o download não iniciar ou der erro no seu aparelho, tire uma screenshot e envie no servidor!</em>
             </div>
             <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
           `;
@@ -2559,6 +2564,11 @@
         await log('Lendo patch legado...', 5);
         const zip = await JSZip.loadAsync(patchBuf);
         const meta = JSON.parse(await zip.file('metadata.json').async('string'));
+
+        // Liberar o buffer bruto do patch para desocupar memória imediatamente
+        patchBuf = null;
+        if (state.applyPatch) state.applyPatch.buffer = null;
+        preloadedPatchBuffer = null;
 
         await log('Verificando integridade da ISO (pode demorar)...', 10);
         let hash;
@@ -2577,7 +2587,7 @@
         const changedFiles = meta.changedFiles;
         await log(`${changedFiles.length} arquivo(s) para aplicar...`, 25);
 
-        // Carregar patches para RAM (eles são pequenos em relação a ISO)
+        // Carregar patches para RAM
         const patches = [];
         for (let i = 0; i < changedFiles.length; i++) {
           const fi = changedFiles[i];
@@ -2596,37 +2606,27 @@
         const sameSz = patches.filter(p => p.newData.length === p.origInfo.size);
         const diffSz = patches.filter(p => p.newData.length !== p.origInfo.size);
 
-        const sectorOverrides = new Map(); // LBA -> Uint8Array
         const appendedBlobs = [];
         const origSectors = Math.ceil(origFile.size / 2048);
         let nextAppendLBA = origSectors;
 
-        // 1. Same-size replacements
-        for (let p of sameSz) {
-          const numSec = Math.ceil(p.newData.length / 2048);
-          for (let i = 0; i < numSec; i++) {
-            const chunk = p.newData.slice(i * 2048, (i + 1) * 2048);
-            const padded = new Uint8Array(2048);
-            padded.set(chunk);
-            sectorOverrides.set(p.origInfo.lba + i, padded);
-          }
-        }
-
-        // 2. Different-size replacements
+        // 1. Arquivos de tamanho diferente (realocados): adiciona ao final da ISO
         for (let i = 0; i < diffSz.length; i++) {
           const p = diffSz[i];
           const pct = 50 + (i / Math.max(diffSz.length, 1)) * 20;
           await log(`Realocando: ${p.path}`, pct);
           const newLBA = nextAppendLBA;
 
+          // Sem clonar memória: usa p.newData direto e anexa padding mínimo de alinhamento
+          appendedBlobs.push(p.newData);
+          const rem = p.newData.length % 2048;
+          if (rem > 0) {
+            appendedBlobs.push(new Uint8Array(2048 - rem));
+          }
           const paddedLen = Math.ceil(p.newData.length / 2048) * 2048;
-          const padded = new Uint8Array(paddedLen);
-          padded.set(p.newData);
-          appendedBlobs.push(padded);
-
           nextAppendLBA += paddedLen / 2048;
 
-          // Update directory record in RAM
+          // Atualiza entrada de diretório na memória
           const dirInfo = iso.dirSectors.get(p.origInfo.dirLBA);
           const view = new DataView(dirInfo.data.buffer, dirInfo.data.byteOffset, dirInfo.data.byteLength);
           const pos = p.origInfo.dirPos;
@@ -2641,69 +2641,59 @@
           }
         }
 
-        // Write modified dir sectors to sectorOverrides
+        // 2. Mapeamento por intervalos de setores (Zero-copy, sem fragmentar em 2KB)
+        const replacements = [];
+
+        // Substituições de mesmo tamanho (arquivos contíguos completos)
+        for (const p of sameSz) {
+          const numSec = Math.ceil(p.newData.length / 2048);
+          const rem = p.newData.length % 2048;
+          replacements.push({
+            startLba: p.origInfo.lba,
+            endLba: p.origInfo.lba + numSec,
+            data: p.newData,
+            padLen: rem > 0 ? 2048 - rem : 0
+          });
+        }
+
+        // Setores de diretório modificados
         for (const [lba, info] of iso.dirSectors.entries()) {
           const numSec = Math.ceil(info.size / 2048);
           for (let i = 0; i < numSec; i++) {
-            sectorOverrides.set(lba + i, info.data.slice(i * 2048, (i + 1) * 2048));
+            replacements.push({
+              startLba: lba + i,
+              endLba: lba + i + 1,
+              data: info.data.subarray(i * 2048, (i + 1) * 2048),
+              padLen: 0
+            });
           }
         }
+
+        // Ordenar intervalos por LBA crescente
+        replacements.sort((a, b) => a.startLba - b.startLba);
 
         await log('Montando ISO Final na Memória Virtual...', 80);
 
-        // Build BlobParts com consolidação de blocos para evitar fragmentação no Android
+        // Montagem eficiente: intercala fatias virtuais do origFile com dados modificados
         const blobParts = [];
-        let currentSliceStartLBA = null;
-        let pendingModified = [];
+        let currentLBA = 0;
 
-        const flushModified = () => {
-          if (pendingModified.length === 0) return;
-          if (pendingModified.length === 1) {
-            blobParts.push(pendingModified[0]);
-          } else {
-            let totalBytes = 0;
-            for (let i = 0; i < pendingModified.length; i++) totalBytes += pendingModified[i].length;
-            const CHUNK_LIMIT = 4 * 1024 * 1024; // agrupa em blocos de até 4MB
-            let chunk = new Uint8Array(Math.min(totalBytes, CHUNK_LIMIT));
-            let chunkOff = 0;
-            for (let i = 0; i < pendingModified.length; i++) {
-              const part = pendingModified[i];
-              if (chunkOff + part.length > chunk.length) {
-                blobParts.push(chunk.subarray(0, chunkOff));
-                totalBytes -= chunkOff;
-                chunk = new Uint8Array(Math.min(totalBytes, CHUNK_LIMIT));
-                chunkOff = 0;
-              }
-              chunk.set(part, chunkOff);
-              chunkOff += part.length;
-            }
-            if (chunkOff > 0) {
-              blobParts.push(chunk.subarray(0, chunkOff));
-            }
+        for (const rep of replacements) {
+          if (rep.startLba > currentLBA) {
+            blobParts.push(origFile.slice(currentLBA * 2048, rep.startLba * 2048));
           }
-          pendingModified = [];
-        };
-
-        for (let lba = 0; lba < origSectors; lba++) {
-          if (sectorOverrides.has(lba)) {
-            if (currentSliceStartLBA !== null) {
-              blobParts.push(origFile.slice(currentSliceStartLBA * 2048, lba * 2048));
-              currentSliceStartLBA = null;
-            }
-            pendingModified.push(sectorOverrides.get(lba));
-          } else {
-            flushModified();
-            if (currentSliceStartLBA === null) {
-              currentSliceStartLBA = lba;
-            }
+          blobParts.push(rep.data);
+          if (rep.padLen > 0) {
+            blobParts.push(new Uint8Array(rep.padLen));
           }
-        }
-        flushModified();
-        if (currentSliceStartLBA !== null) {
-          blobParts.push(origFile.slice(currentSliceStartLBA * 2048, origSectors * 2048));
+          currentLBA = Math.max(currentLBA, rep.endLba);
         }
 
-        // Append different-size blobs
+        if (currentLBA < origSectors) {
+          blobParts.push(origFile.slice(currentLBA * 2048, origFile.size));
+        }
+
+        // Anexa os arquivos realocados (diffSz)
         for (const app of appendedBlobs) {
           blobParts.push(app);
         }
@@ -2738,7 +2728,7 @@
         ⬇️ Baixar ${dlName}
       </button>
       <div style="margin-top: 10px; font-size: 10px; color: var(--text2); opacity: 0.85; text-align: center;">
-        💡 <em>Se o download não iniciar ou der erro no seu aparelho, tire um print desta tela e me envie!</em>
+        💡 <em>Se o download não iniciar ou der erro no seu aparelho, tire uma screenshot e envie no servidor!</em>
       </div>
       <button class="retry-btn" onclick="resetApply()">Aplicar outro patch</button>
     `;
@@ -2751,7 +2741,7 @@
       <div class="result-title">Erro ao Aplicar Patch!</div>
       <div class="result-info">${err.message.replace(/\n/g, '<br>')}</div>
       <div style="margin-top: 12px; margin-bottom: 14px; padding: 12px; background: rgba(255, 50, 80, 0.12); border: 1px solid rgba(255, 50, 80, 0.35); border-radius: 8px; font-size: 11px; color: #ff8095; line-height: 1.5; text-align: center;">
-        📸 <strong>Tire um print desta tela</strong> e envie para mim (<strong>Rafael Godoy</strong>) para analisarmos o que aconteceu!
+        📸 <strong>Tire uma screenshot desta tela</strong> e envie no servidor para analisarmos o que aconteceu!
       </div>
       <button class="retry-btn" onclick="resetApply()">Tentar novamente</button>
     `;
@@ -3428,7 +3418,7 @@
       <div class="result-title">Erro ao Criar Patch!</div>
       <div class="result-info">${err.message}</div>
       <div style="margin-top: 12px; margin-bottom: 14px; padding: 12px; background: rgba(255, 50, 80, 0.12); border: 1px solid rgba(255, 50, 80, 0.35); border-radius: 8px; font-size: 11px; color: #ff8095; line-height: 1.5; text-align: center;">
-        📸 <strong>Tire um print desta tela</strong> e envie para mim (<strong>Rafael Godoy</strong>) para analisarmos o que aconteceu!
+        📸 <strong>Tire uma screenshot desta tela</strong> e envie no servidor para analisarmos o que aconteceu!
       </div>
       <button class="retry-btn" onclick="resetCreate()">Tentar novamente</button>
     `;
