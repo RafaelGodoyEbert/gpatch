@@ -9,6 +9,7 @@
     href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Bebas+Neue&display=swap"
     rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="StreamSaver.js"></script>
   <style>
     :root {
       --bg: #04060f;
@@ -1824,11 +1825,54 @@
               }
               return;
             }
-            console.warn('showSaveFilePicker falhou, tentando fallback com URL:', pickerErr);
+            console.warn('showSaveFilePicker falhou, tentando streaming com Service Worker:', pickerErr);
           }
         }
 
-        // 2. Fallback: <a download> com URL.createObjectURL
+        // 2. StreamSaver.js (Bypassa o limite de 2GB de Blob no Chrome Android via Service Worker)
+        const ss = window.streamSaver || (typeof streamSaver !== 'undefined' ? streamSaver : null);
+        if (ss && blob.stream) {
+          try {
+            ss.mitm = new URL('mitm.html', location.href).href;
+            const fileStream = ss.createWriteStream(filename, { size: blob.size });
+            const writer = fileStream.getWriter();
+            const reader = blob.stream().getReader();
+            let bytesWritten = 0;
+            const totalBytes = blob.size;
+            let lastUpdate = 0;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                await writer.close();
+                break;
+              }
+              await writer.write(value);
+              bytesWritten += value.length;
+
+              const now = Date.now();
+              if (now - lastUpdate > 300) {
+                lastUpdate = now;
+                const pct = Math.round((bytesWritten / totalBytes) * 100);
+                if (btnEl) btnEl.innerHTML = `💾 Gravando: ${fmtSize(bytesWritten)} / ${fmtSize(totalBytes)} (${pct}%)`;
+              }
+            }
+
+            if (btnEl) {
+              btnEl.innerHTML = '✅ Salvo com sucesso!';
+              setTimeout(() => {
+                btnEl.disabled = false;
+                btnEl.style.opacity = '1';
+                btnEl.innerHTML = originalHtml;
+              }, 4000);
+            }
+            return;
+          } catch (streamErr) {
+            console.warn('StreamSaver falhou, tentando fallback com URL blob:', streamErr);
+          }
+        }
+
+        // 3. Fallback: <a download> com URL.createObjectURL
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -3507,6 +3551,17 @@
     // ═══════════════════════════════════════════════
     //  INIT
     // ═══════════════════════════════════════════════
+    if (typeof window.streamSaver !== 'undefined') {
+      try {
+        window.streamSaver.mitm = new URL('mitm.html', location.href).href;
+      } catch (e) {}
+    }
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(e => {
+        console.debug('SW pre-reg:', e);
+      });
+    }
+
     checkURLParams();
     loadPresetsFromJSON();
     checkURLPatch();
