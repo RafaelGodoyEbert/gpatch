@@ -1832,11 +1832,54 @@
               }
               return;
             }
-            console.warn('showSaveFilePicker falhou, tentando fallback com URL:', pickerErr);
+            console.warn('showSaveFilePicker falhou, tentando streaming com Service Worker:', pickerErr);
           }
         }
 
-        // 2. Fallback: <a download> com URL.createObjectURL
+        // 2. StreamSaver.js (Bypassa o limite de 2GB de Blob no Chrome Android via Service Worker)
+        const ss = window.streamSaver || (typeof streamSaver !== 'undefined' ? streamSaver : null);
+        if (ss && blob.stream) {
+          try {
+            ss.mitm = new URL('mitm.html', location.href).href;
+            const fileStream = ss.createWriteStream(filename, { size: blob.size });
+            const writer = fileStream.getWriter();
+            const reader = blob.stream().getReader();
+            let bytesWritten = 0;
+            const totalBytes = blob.size;
+            let lastUpdate = 0;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                await writer.close();
+                break;
+              }
+              await writer.write(value);
+              bytesWritten += value.length;
+
+              const now = Date.now();
+              if (now - lastUpdate > 300) {
+                lastUpdate = now;
+                const pct = Math.round((bytesWritten / totalBytes) * 100);
+                if (btnEl) btnEl.innerHTML = `💾 Gravando: ${fmtSize(bytesWritten)} / ${fmtSize(totalBytes)} (${pct}%)`;
+              }
+            }
+
+            if (btnEl) {
+              btnEl.innerHTML = '✅ Salvo com sucesso!';
+              setTimeout(() => {
+                btnEl.disabled = false;
+                btnEl.style.opacity = '1';
+                btnEl.innerHTML = originalHtml;
+              }, 4000);
+            }
+            return;
+          } catch (streamErr) {
+            console.warn('StreamSaver falhou, tentando fallback com URL blob:', streamErr);
+          }
+        }
+
+        // 3. Fallback: <a download> com URL.createObjectURL
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -1848,9 +1891,6 @@
           URL.revokeObjectURL(url);
         }, 120000);
 
-        const isAndroid = /Android/i.test(navigator.userAgent);
-        const isLargeMobileBlob = isAndroid && blob.size > 1.8 * 1024 * 1024 * 1024;
-
         if (btnEl) {
           btnEl.innerHTML = '✅ Download iniciado!';
           setTimeout(() => {
@@ -1858,20 +1898,6 @@
             btnEl.style.opacity = '1';
             btnEl.innerHTML = originalHtml;
           }, 3000);
-
-          if (isLargeMobileBlob) {
-            let warnBox = document.getElementById('mobileLimitWarnBox');
-            if (!warnBox) {
-              warnBox = document.createElement('div');
-              warnBox.id = 'mobileLimitWarnBox';
-              btnEl.parentNode.insertBefore(warnBox, btnEl.nextSibling);
-            }
-            warnBox.style.cssText = 'margin-top: 14px; padding: 12px; background: rgba(255, 180, 0, 0.12); border: 1px solid rgba(255, 180, 0, 0.35); border-radius: 8px; font-size: 11px; color: #ffcc00; line-height: 1.6; text-align: left;';
-            warnBox.innerHTML = `⚠️ <strong>Aviso para Android (Arquivo de ${fmtSize(blob.size)}):</strong><br>
-            O <strong>Google Chrome no Android</strong> tem uma trava de 2 GB para downloads criados na memória. Se o sistema exibir <em>"Falha em 1 download"</em>:<br>
-            • <strong>No PC:</strong> Abra este link no computador (o Chrome de PC baixa arquivos de 4 GB sem essa restrição).<br>
-            • <strong>No Celular:</strong> Use o navegador <strong>Firefox para Android</strong> (ele não tem esse limite de 2 GB do Chrome).`;
-          }
         }
       } catch (err) {
         console.error('Erro ao salvar arquivo:', err);
@@ -3522,6 +3548,17 @@
     // ═══════════════════════════════════════════════
     //  INIT
     // ═══════════════════════════════════════════════
+    if (typeof window.streamSaver !== 'undefined') {
+      try {
+        window.streamSaver.mitm = new URL('mitm.html', location.href).href;
+      } catch (e) {}
+    }
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(e => {
+        console.debug('SW pre-reg:', e);
+      });
+    }
+
     checkURLParams();
     loadPresetsFromJSON();
     checkURLPatch();
