@@ -1778,18 +1778,46 @@
 
     let currentDownloadBlob = null;
     let currentDownloadName = '';
+    let activeDownloadUrl = null;
+
+    function revokeActiveDownloadUrl() {
+      if (activeDownloadUrl) {
+        URL.revokeObjectURL(activeDownloadUrl);
+        activeDownloadUrl = null;
+      }
+    }
+    window.addEventListener('pagehide', revokeActiveDownloadUrl);
 
     async function saveCurrentFile(btnEl) {
       if (!currentDownloadBlob) return;
       const blob = currentDownloadBlob;
       const filename = currentDownloadName || 'arquivo_modificado.iso';
       const originalHtml = btnEl ? btnEl.innerHTML : '';
+      const oldErrBox = document.getElementById('saveErrorBox');
+      if (oldErrBox) oldErrBox.remove();
 
       if (btnEl) {
         btnEl.disabled = true;
         btnEl.style.opacity = '0.7';
         btnEl.innerHTML = '💾 Gravando no dispositivo...';
       }
+
+      const writeBlobInChunks = async (writeFn, onProgress) => {
+        const CHUNK = 2 * 1024 * 1024; // 2MB reduz overhead de IPC/GC em celulares modestos
+        const totalBytes = blob.size;
+        let bytesWritten = 0;
+        let lastUpdate = 0;
+        for (let offset = 0; offset < totalBytes; offset += CHUNK) {
+          const buf = await blob.slice(offset, Math.min(offset + CHUNK, totalBytes)).arrayBuffer();
+          await writeFn(new Uint8Array(buf));
+          bytesWritten += buf.byteLength;
+          const now = Date.now();
+          if (onProgress && (now - lastUpdate > 300 || bytesWritten >= totalBytes)) {
+            lastUpdate = now;
+            onProgress(bytesWritten, totalBytes);
+          }
+        }
+      };
 
       try {
         // 1. Tentar File System Access API (showSaveFilePicker)
@@ -1806,12 +1834,16 @@
               }]
             });
             const writable = await handle.createWritable();
-            if (blob.stream && writable.write) {
-              await blob.stream().pipeTo(writable);
-            } else {
-              await writable.write(blob);
-              await writable.close();
-            }
+            await writeBlobInChunks(
+              chunk => writable.write(chunk),
+              (written, total) => {
+                if (btnEl) {
+                  const pct = Math.round((written / total) * 100);
+                  btnEl.innerHTML = `💾 Gravando: ${fmtSize(written)} / ${fmtSize(total)} (${pct}%)`;
+                }
+              }
+            );
+            await writable.close();
 
             if (btnEl) {
               btnEl.innerHTML = '✅ Salvo com sucesso!';
@@ -1838,32 +1870,43 @@
 
         // 2. StreamSaver.js (Bypassa o limite de 2GB de Blob no Chrome Android via Service Worker)
         const ss = window.streamSaver || (typeof streamSaver !== 'undefined' ? streamSaver : null);
-        if (ss && blob.stream) {
+        const canStreamSafely = ss && !ss.isBlobFallback && (ss.supportsTransferable || blob.size <= 512 * 1024 * 1024);
+        if (canStreamSafely) {
+          let writer = null;
+          let startTimer = null;
           try {
             ss.mitm = new URL('mitm.html', location.href).href;
-            const fileStream = ss.createWriteStream(filename, { size: blob.size });
-            const writer = fileStream.getWriter();
-            const reader = blob.stream().getReader();
-            let bytesWritten = 0;
-            const totalBytes = blob.size;
-            let lastUpdate = 0;
+            let swStarted = false;
+            let rejectAbort;
+            const abortPromise = new Promise((_, rej) => { rejectAbort = rej; });
+            startTimer = setTimeout(() => {
+              if (!swStarted) rejectAbort(new Error('Service Worker não iniciou o download a tempo'));
+            }, 12000);
 
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) {
-                await writer.close();
-                break;
+            const fileStream = ss.createWriteStream(filename, {
+              size: blob.size,
+              onStart: () => {
+                swStarted = true;
+                clearTimeout(startTimer);
+              },
+              onAbort: reason => {
+                clearTimeout(startTimer);
+                rejectAbort(new Error(reason || 'Download interrompido pelo navegador'));
               }
-              await writer.write(value);
-              bytesWritten += value.length;
+            });
+            writer = fileStream.getWriter();
 
-              const now = Date.now();
-              if (now - lastUpdate > 300) {
-                lastUpdate = now;
-                const pct = Math.round((bytesWritten / totalBytes) * 100);
-                if (btnEl) btnEl.innerHTML = `💾 Gravando: ${fmtSize(bytesWritten)} / ${fmtSize(totalBytes)} (${pct}%)`;
+            await writeBlobInChunks(
+              chunk => Promise.race([writer.write(chunk), abortPromise]),
+              (written, total) => {
+                if (btnEl) {
+                  const pct = Math.round((written / total) * 100);
+                  btnEl.innerHTML = `💾 Gravando: ${fmtSize(written)} / ${fmtSize(total)} (${pct}%)`;
+                }
               }
-            }
+            );
+            await Promise.race([writer.close(), abortPromise]);
+            clearTimeout(startTimer);
 
             if (btnEl) {
               btnEl.innerHTML = '✅ Salvo com sucesso!';
@@ -1875,21 +1918,25 @@
             }
             return;
           } catch (streamErr) {
+            clearTimeout(startTimer);
+            if (writer) {
+              try { writer.abort().catch(() => {}); } catch (e) {}
+            }
             console.warn('StreamSaver falhou, tentando fallback com URL blob:', streamErr);
           }
         }
 
-        // 3. Fallback: <a download> com URL.createObjectURL
-        const url = URL.createObjectURL(blob);
+        // 3. Fallback: <a download> com URL.createObjectURL (sem revogar prematuramente em 120s)
+        revokeActiveDownloadUrl();
+        activeDownloadUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = activeDownloadUrl;
         a.download = filename;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 120000);
+          if (a.parentNode) a.parentNode.removeChild(a);
+        }, 1000);
 
         if (btnEl) {
           btnEl.innerHTML = '✅ Download iniciado!';
@@ -1898,6 +1945,14 @@
             btnEl.style.opacity = '1';
             btnEl.innerHTML = originalHtml;
           }, 3000);
+
+          if (blob.size > 2 * 1024 * 1024 * 1024) {
+            const warnBox = document.createElement('div');
+            warnBox.id = 'saveErrorBox';
+            warnBox.style.cssText = 'margin-top: 12px; padding: 12px; background: rgba(255, 204, 0, 0.10); border: 1px solid rgba(255, 204, 0, 0.35); border-radius: 8px; font-size: 11px; color: #ffd966; line-height: 1.5; text-align: center;';
+            warnBox.innerHTML = '⚠️ <strong>Arquivo maior que 2 GB em modo de compatibilidade:</strong> se o navegador exibir <em>"Falha em 1 download"</em>, abra este site diretamente no <strong>Google Chrome</strong> (fora de aba anônima ou navegador interno de apps como Discord/WhatsApp) e mantenha a tela ativa durante o salvamento.';
+            btnEl.parentNode.insertBefore(warnBox, btnEl.nextSibling);
+          }
         }
       } catch (err) {
         console.error('Erro ao salvar arquivo:', err);
@@ -1928,6 +1983,7 @@
     }
 
     function resetResult(mode) {
+      revokeActiveDownloadUrl();
       currentDownloadBlob = null;
       currentDownloadName = '';
       document.getElementById(mode + 'Result').className = 'result-card';
@@ -2595,7 +2651,7 @@
 
         // JSZip Fallback (GPatch v1/v2)
         await log('Lendo patch legado...', 5);
-        const zip = await JSZip.loadAsync(patchBuf);
+        let zip = await JSZip.loadAsync(patchBuf);
         const meta = JSON.parse(await zip.file('metadata.json').async('string'));
 
         // Liberar o buffer bruto do patch para desocupar memória imediatamente
@@ -2627,6 +2683,7 @@
           const pct = 25 + (i / changedFiles.length) * 20;
           await log(`Lendo: ${fi.path}`, pct);
           const newData = await zip.file(`files/${fi.path}`).async('uint8array');
+          zip.remove(`files/${fi.path}`);
           const origInfo = iso.findFile ? iso.findFile(fi.path) : iso.files[fi.path];
           if (!origInfo) {
             await log(`Aviso: ${fi.path} não encontrado na ISO original`, pct, 'warn');
@@ -2634,6 +2691,7 @@
           }
           patches.push({ origInfo, newData, path: fi.path });
         }
+        zip = null;
 
         await log('Preparando mapeamento de blocos...', 46);
         const sameSz = patches.filter(p => p.newData.length === p.origInfo.size);
@@ -2703,6 +2761,7 @@
         }
 
         // Ordenar intervalos por LBA crescente
+        patches.length = 0;
         replacements.sort((a, b) => a.startLba - b.startLba);
 
         await log('Montando ISO Final na Memória Virtual...', 80);
@@ -2735,6 +2794,9 @@
         await sleep(60);
 
         const blob = new Blob(blobParts, { type: 'application/octet-stream' });
+        blobParts.length = 0;
+        appendedBlobs.length = 0;
+        replacements.length = 0;
         const origName = state.applyISO.name.replace(/\.(iso|bin|img)$/i, '');
         const dlName = `${origName}_dubbed.iso`;
         currentDownloadBlob = blob;

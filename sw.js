@@ -32,17 +32,20 @@ self.onmessage = event => {
   // but v2.0.0 will always transfer the stream through MessageChannel #94
   if (event.data.readableStream) {
     metadata[0] = event.data.readableStream
+    map.set(downloadUrl, metadata)
+    port.postMessage({ download: downloadUrl })
   } else if (event.data.transferringReadable) {
     port.onmessage = evt => {
       port.onmessage = null
       metadata[0] = evt.data.readableStream
+      map.set(downloadUrl, metadata)
+      port.postMessage({ download: downloadUrl })
     }
   } else {
     metadata[0] = createStream(port)
+    map.set(downloadUrl, metadata)
+    port.postMessage({ download: downloadUrl })
   }
-
-  map.set(downloadUrl, metadata)
-  port.postMessage({ download: downloadUrl })
 }
 
 function createStream (port) {
@@ -86,10 +89,16 @@ self.onfetch = event => {
 
   map.delete(url)
 
+  if (!stream) {
+    port.postMessage({ abort: true, error: 'Stream ausente no Service Worker' })
+    return event.respondWith(new Response('Stream unavailable', { status: 500 }))
+  }
+
   // Not comfortable letting any user control all headers
   // so we only copy over the length & disposition
   const responseHeaders = new Headers({
     'Content-Type': 'application/octet-stream; charset=utf-8',
+    'Cache-Control': 'no-store',
 
     // To be on the safe side, The link can be opened in a iframe.
     // but octet-stream should stop it.

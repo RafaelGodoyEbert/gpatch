@@ -116,6 +116,9 @@
     })
   })
 
+  streamSaver.isBlobFallback = useBlobFallback
+  streamSaver.supportsTransferable = supportsTransferable
+
   function loadTransporter () {
     if (!mitmTransporter) {
       mitmTransporter = isSecureContext
@@ -142,6 +145,8 @@
     let downloadUrl = null
     let channel = null
     let ts = null
+    let aborted = false
+    let abortReason = null
 
     // normalize arguments
     if (Number.isFinite(options)) {
@@ -182,9 +187,18 @@
       const args = [ response, '*', [ channel.port2 ] ]
 
       if (supportsTransferable) {
-        const transformer = downloadStrategy === 'iframe' ? undefined : {
+        const transformer = downloadStrategy === 'iframe' ? {
+          transform (chunk, controller) {
+            if (aborted) throw new Error(abortReason || 'Download abortado')
+            controller.enqueue(chunk)
+          },
+          flush () {
+            if (aborted) throw new Error(abortReason || 'Download abortado')
+          }
+        } : {
           // This transformer & flush method is only used by insecure context.
           transform (chunk, controller) {
+            if (aborted) throw new Error(abortReason || 'Download abortado')
             if (!(chunk instanceof Uint8Array)) {
               throw new TypeError('Can only write Uint8Arrays')
             }
@@ -197,6 +211,7 @@
             }
           },
           flush () {
+            if (aborted) throw new Error(abortReason || 'Download abortado')
             if (downloadUrl) {
               location.href = downloadUrl
             }
@@ -237,13 +252,20 @@
             // We never remove this iframes b/c it can interrupt saving
             makeIframe(evt.data.download)
           }
+        } else if (evt.data.debug === 'Download started') {
+          if (typeof opts.onStart === 'function') opts.onStart()
         } else if (evt.data.abort) {
+          aborted = true
+          abortReason = evt.data.error || 'Download cancelado ou interrompido'
           chunks = []
-          channel.port1.postMessage('abort') //send back so controller is aborted
-          channel.port1.onmessage = null
-          channel.port1.close()
-          channel.port2.close()
-          channel = null
+          if (typeof opts.onAbort === 'function') opts.onAbort(abortReason)
+          if (channel) {
+            try { channel.port1.postMessage('abort') } catch (e) {} //send back so controller is aborted
+            channel.port1.onmessage = null
+            channel.port1.close()
+            channel.port2.close()
+            channel = null
+          }
         }
       }
 

@@ -19,9 +19,10 @@ let keepAlive = () => {
   var interval = setInterval(() => {
     if (sw) {
       sw.postMessage('ping')
-    } else {
-      fetch(ping).then(res => res.text(!res.ok && clearInterval(interval)))
     }
+    fetch(ping).then(res => {
+      if (!res.ok) clearInterval(interval)
+    }).catch(() => {})
   }, 10000)
 }
 
@@ -45,13 +46,17 @@ function registerWorker() {
       return (sw = swReg.active)
     }
     const swRegTmp = swReg.installing || swReg.waiting || swReg.active
-    return (sw = swReg.active) || new Promise(resolve => {
-      if (!swRegTmp) return resolve()
+    return (sw = swReg.active) || new Promise((resolve, reject) => {
+      if (!swRegTmp) return reject(new Error('Service Worker indisponível'))
+      let fn
       swRegTmp.addEventListener('statechange', fn = () => {
         if (swRegTmp.state === 'activated') {
           swRegTmp.removeEventListener('statechange', fn)
           sw = swReg.active
-          resolve()
+          resolve(sw)
+        } else if (swRegTmp.state === 'redundant') {
+          swRegTmp.removeEventListener('statechange', fn)
+          reject(new Error('Falha ao ativar Service Worker'))
         }
       })
     })
@@ -141,11 +146,16 @@ function onMessage (event) {
     ? [ ports[0], data.readableStream ]
     : [ ports[0] ]
 
-  if (!(data.readableStream || data.transferringReadable)) {
-    keepAlive()
-  }
+  keepAlive()
 
   return sw.postMessage(data, transferable)
+}
+
+function abortMessage (evt, reason) {
+  const port = evt && evt.ports && evt.ports[0]
+  if (port) {
+    port.postMessage({ abort: true, error: reason })
+  }
 }
 
 if (window.opener) {
@@ -155,10 +165,21 @@ if (window.opener) {
 }
 
 if (navigator.serviceWorker) {
-  registerWorker().then(() => {
+  registerWorker().then(activeSw => {
+    if (!activeSw) throw new Error('Service Worker não ativou')
     window.onmessage = onMessage
     messages.forEach(window.onmessage)
+    messages = []
+  }).catch(err => {
+    const reason = (err && err.message) || 'Service Worker indisponível'
+    window.onmessage = evt => abortMessage(evt, reason)
+    messages.forEach(evt => abortMessage(evt, reason))
+    messages = []
   })
+} else {
+  window.onmessage = evt => abortMessage(evt, 'Service Worker não suportado')
+  messages.forEach(evt => abortMessage(evt, 'Service Worker não suportado'))
+  messages = []
 }
 
 // FF v102 just started to supports transferable streams, but still needs to ping sw.js
